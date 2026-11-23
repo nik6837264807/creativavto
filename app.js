@@ -570,3 +570,4 @@ async function enableIosPush() {
     btn.textContent = "Включить уведомления";
   }
 }
+const VAPID_PUBLIC_KEY = "BMXC3T3ZuXjoqSH-2vTFnl5huR8fIPeXxWvtUQg7cbyMXNWJ75I2068C_NFiSoRC5QvA79SBkyFkHkl5yD_4ds8";

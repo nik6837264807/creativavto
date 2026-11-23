@@ -110,6 +110,11 @@
           <h3>Уведомления от СТО</h3>
           <button class="icon-btn" onclick="loadMessages()">🔄</button>
         </div>
+        <div id="push-enable-card" class="card card-blue mb-12">
+          <div style="font-weight:700; margin-bottom:6px;">📲 Push-уведомления на экран</div>
+          <div style="font-size:13px; color:var(--muted); margin-bottom:10px;">Получайте сообщения от мастера и напоминания о записи прямо на экран блокировки.</div>
+          <button id="push-enable-btn" class="btn" onclick="enableIosPush()">Включить уведомления</button>
+        </div>
         <div id="messages-list"></div>
       </section>
 

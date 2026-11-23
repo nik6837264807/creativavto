@@ -1,4 +1,4 @@
-const CACHE_NAME = "creativavto-pwa-v9";
+const CACHE_NAME = "creativavto-pwa-11";
 const ASSETS = Array.of(
   "./",
   "./index.html",

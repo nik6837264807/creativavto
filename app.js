@@ -1,0 +1,487 @@
+function getDb() {
+  if (window._supaClient) return window._supaClient;
+  const projectId = "afrlwjzssgmlwxmzlmiq";
+  const baseUrl = "https://" + projectId + ".supabase.co";
+  const key = "sb_publishable_4e0HL2_orZvRoPKHQHUh3w_3Ch22UlU";
+
+  window._supaClient = {
+    from(table) {
+      let filters = new Array();
+      let method = "GET";
+      let payload = null;
+      let isSingle = false;
+      const reqHeaders = { "apikey": key, "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
+
+      const builder = {
+        select() { return builder; },
+        eq(col, val) { filters.push(`${col}=eq.${encodeURIComponent(val)}`); return builder; },
+        insert(data) { method = "POST"; payload = JSON.stringify(data); reqHeaders["Prefer"] = "return=representation"; return builder; },
+        update(data) { method = "PATCH"; payload = JSON.stringify(data); reqHeaders["Prefer"] = "return=representation"; return builder; },
+        delete() { method = "DELETE"; return builder; },
+        single() { isSingle = true; return builder; },
+        maybeSingle() { isSingle = true; return builder; },
+        async then(resolve) {
+          try {
+            const q = filters.length ? `?${filters.join("&")}` : "";
+            const res = await fetch(`${baseUrl}/rest/v1/${table}${q}`, { method, headers: reqHeaders, body: payload });
+            const text = await res.text();
+            const json = text ? JSON.parse(text) : null;
+            if (!res.ok) return resolve({ data: null, error: new Error(json?.message || res.statusText) });
+            const data = isSingle ? (Array.isArray(json) ? (json.at(0) || null) : json) : json;
+            resolve({ data, error: null });
+          } catch (error) {
+            resolve({ data: null, error });
+          }
+        }
+      };
+      return builder;
+    },
+    functions: {
+      async invoke(fnName, { body }) {
+        try {
+          const reqHeaders = { "apikey": key, "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
+          const res = await fetch(`${baseUrl}/functions/v1/${fnName}`, { method: "POST", headers: reqHeaders, body: JSON.stringify(body) });
+          const data = await res.json();
+          return res.ok ? { data, error: null } : { data: null, error: new Error(data?.error || res.statusText) };
+        } catch (error) {
+          return { data: null, error };
+        }
+      }
+    }
+  };
+  return window._supaClient;
+}
+
+var isLoginMode = false;
+var showArchive = false;
+var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+
+var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+var isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+if (isIos && !isStandalone) {
+  document.getElementById("ios-install-hint").classList.remove("hidden");
+}
+
+function saveSession(data) {
+  state = { ...(state || {}), ...data };
+  localStorage.setItem("creativavto_session", JSON.stringify(state));
+  updateHeaderCar();
+}
+
+function updateHeaderCar() {
+  if (!state) return;
+  const plate = state.carPlate ? ` (${state.carPlate})` : "";
+  const label = `${state.carModel || "Выбрать авто"}${plate}`;
+  document.getElementById("header-car").textContent = `🚗 ${label} ▼`;
+  document.getElementById("book-title").textContent = `Сервисная книжка: ${state.carModel || ""}`;
+  document.getElementById("new-app-title").textContent = `Новая заявка (${state.carModel || ""})`;
+}
+
+function toggleAuthMode() {
+  isLoginMode = !isLoginMode;
+  document.getElementById("reg-fields").classList.toggle("hidden", isLoginMode);
+  document.getElementById("auth-subtitle").textContent = isLoginMode ? "Восстановление сервисной книжки" : "Регистрация автовладельца";
+  document.getElementById("auth-submit-btn").textContent = isLoginMode ? "Войти и восстановить данные" : "Создать сервисную книжку";
+  document.getElementById("auth-toggle-btn").textContent = isLoginMode ? "Впервые у нас? Зарегистрироваться" : "Уже есть аккаунт / сменил телефон? Войти";
+}
+async function handleAuth() {
+  const db = getDb();
+  const phone = document.getElementById("auth-phone").value.trim();
+  const password = document.getElementById("auth-pass").value.trim();
+  const btn = document.getElementById("auth-submit-btn");
+  btn.disabled = true;
+
+  try {
+    if (isLoginMode) {
+      const { data: found, error } = await db.from("clients").select("*").eq("phone", phone).eq("password", password).maybeSingle();
+      if (error) throw error;
+      if (!found) {
+        alert("Неверный телефон или кодовое слово");
+        btn.disabled = false;
+        return;
+      }
+      const { data: cars } = await db.from("cars").select("*").eq("client_id", found.id);
+      const firstCar = Array.isArray(cars) && cars.length > 0 ? cars.at(0) : null;
+      saveSession({
+        clientId: found.id, name: found.name, phone: found.phone,
+        activeCarId: firstCar ? firstCar.id : "",
+        carModel: firstCar ? firstCar.car_model : found.car_model,
+        carPlate: firstCar ? firstCar.car_plate : found.car_plate
+      });
+      initApp();
+    } else {
+      const name = document.getElementById("auth-name").value.trim();
+      const carModel = document.getElementById("auth-car").value.trim();
+      const carPlate = document.getElementById("auth-plate").value.trim();
+      if (!name || !carModel || !phone || !password) {
+        alert("Заполните обязательные поля");
+        btn.disabled = false;
+        return;
+      }
+      const { data: inserted, error } = await db.from("clients")
+        .insert({ name, car_model: carModel, car_plate: carPlate, phone, password })
+        .select().single();
+      if (error) throw error;
+
+      const { data: insertedCar } = await db.from("cars")
+        .insert({ client_id: inserted.id, car_model: carModel, car_plate: carPlate })
+        .select().single();
+
+      saveSession({
+        clientId: inserted.id, name: inserted.name, phone: inserted.phone,
+        activeCarId: insertedCar ? insertedCar.id : "", carModel, carPlate
+      });
+      initApp();
+    }
+  } catch (e) {
+    alert("Ошибка сети: " + e.message);
+  }
+  btn.disabled = false;
+}
+
+function switchTab(idx) {
+  const tabs = Array.of(0, 1, 2, 3);
+  const navItems = document.querySelectorAll(".nav-item");
+  tabs.forEach((i) => {
+    document.getElementById(`tab-${i}`).classList.toggle("hidden", i !== idx);
+    if (navItems.item(i)) navItems.item(i).classList.toggle("active", i === idx);
+  });
+  document.getElementById("tab-settings").classList.add("hidden");
+  document.getElementById("bottom-nav").classList.remove("hidden");
+
+  if (idx === 1) loadServiceBook();
+  if (idx === 2) loadAppointments();
+  if (idx === 3) loadMessages();
+}
+
+function openAiChat() {
+  document.getElementById("diagnost-home").classList.add("hidden");
+  document.getElementById("diagnost-chat").classList.remove("hidden");
+}
+
+function closeAiChat() {
+  document.getElementById("diagnost-chat").classList.add("hidden");
+  document.getElementById("diagnost-home").classList.remove("hidden");
+  document.getElementById("ai-answer-box").classList.add("hidden");
+}
+
+async function askAiMechanic() {
+  const db = getDb();
+  const prompt = document.getElementById("ai-question").value.trim();
+  if (!prompt) return;
+  const btn = document.getElementById("ai-ask-btn");
+  btn.disabled = true;
+  btn.textContent = "Механик анализирует...";
+
+  try {
+    const { data, error } = await db.functions.invoke("ai-mechanic", {
+      body: { mode: "text", prompt, carModel: state.carModel }
+    });
+    if (error) throw error;
+    if (data && data.error) throw new Error(data.error);
+    document.getElementById("ai-answer-text").textContent = data.reply;
+    document.getElementById("ai-answer-box").classList.remove("hidden");
+  } catch (e) {
+    alert("Ошибка ИИ: " + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = "Получить консультацию";
+}
+function resizeImageToBase64(file, maxSide = 1024) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxSide || h > maxSide) {
+          if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
+          else { w = Math.round((w * maxSide) / h); h = maxSide; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleDashboardPhoto(event) {
+  const db = getDb();
+  const file = event.target.files?.item(0);
+  if (!file) return;
+  openAiChat();
+  document.getElementById("ai-question").value = `Фото приборной панели (${state.carModel}): расшифровка горящих значков`;
+  const btn = document.getElementById("ai-ask-btn");
+  btn.disabled = true;
+  btn.textContent = "Распознаю значки по фото...";
+
+  try {
+    const imageBase64 = await resizeImageToBase64(file, 1024);
+    const { data, error } = await db.functions.invoke("ai-mechanic", {
+      body: { mode: "dashboard_vision", imageBase64, carModel: state.carModel }
+    });
+    if (error) throw error;
+    if (data && data.error) throw new Error(data.error);
+    document.getElementById("ai-answer-text").textContent = data.reply;
+    document.getElementById("ai-answer-box").classList.remove("hidden");
+  } catch (e) {
+    alert("Ошибка распознавания фото: " + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = "Получить консультацию";
+  event.target.value = "";
+}
+
+function bookFromAi() {
+  document.getElementById("problem-input").value = document.getElementById("ai-question").value;
+  switchTab(2);
+}
+
+async function openGarageModal() {
+  const db = getDb();
+  document.getElementById("garage-modal").classList.remove("hidden");
+  const { data: cars } = await db.from("cars").select("*").eq("client_id", state.clientId);
+  const list = document.getElementById("garage-list");
+  list.innerHTML = "";
+  const safeCars = Array.isArray(cars) ? cars : new Array();
+
+  safeCars.forEach((car) => {
+    const active = car.id === state.activeCarId;
+    const div = document.createElement("div");
+    div.className = `card ${active ? "card-blue" : ""}`;
+    div.innerHTML = `
+      <div class="row-between">
+        <div style="flex:1; cursor:pointer;" class="car-pick-area">
+          <b>${car.car_model}</b> ${car.car_plate ? `(${car.car_plate})` : ""}
+          <div style="font-size:12px; color:var(--muted);">Пробег: ${car.current_mileage || 0} км</div>
+        </div>
+        <button class="icon-btn car-transfer-btn" title="Передать авто">📤</button>
+      </div>`;
+    div.querySelector(".car-pick-area").onclick = () => selectCar(car);
+    div.querySelector(".car-transfer-btn").onclick = () => transferCar(car.id, car.car_model);
+    list.appendChild(div);
+  });
+}
+
+function closeGarageModal() {
+  document.getElementById("garage-modal").classList.add("hidden");
+}
+
+function selectCar(car) {
+  saveSession({ activeCarId: car.id, carModel: car.car_model, carPlate: car.car_plate });
+  closeGarageModal();
+  loadServiceBook();
+}
+
+async function addCarToGarage() {
+  const db = getDb();
+  const model = document.getElementById("new-car-model").value.trim();
+  const plate = document.getElementById("new-car-plate").value.trim();
+  if (!model) return;
+  const { data: added } = await db.from("cars")
+    .insert({ client_id: state.clientId, car_model: model, car_plate: plate })
+    .select().single();
+  if (added) {
+    document.getElementById("new-car-model").value = "";
+    document.getElementById("new-car-plate").value = "";
+    selectCar(added);
+  }
+}
+
+async function transferCar(carId, carModel) {
+  const db = getDb();
+  const targetPhone = prompt(`Передача авто «${carModel}».\nВведите телефон нового владельца:`);
+  if (!targetPhone) return;
+  const { data: newOwner } = await db.from("clients").select("*").eq("phone", targetPhone.trim()).maybeSingle();
+  if (!newOwner) return alert("Пользователь с таким номером не найден!");
+  await db.from("cars").update({ client_id: newOwner.id }).eq("id", carId);
+  await db.from("service_records").update({ client_id: newOwner.id }).eq("car_id", carId);
+  alert(`Авто передано ${newOwner.name}!`);
+  openGarageModal();
+}
+async function loadServiceBook() {
+  const db = getDb();
+  if (state.activeCarId) {
+    const { data: car } = await db.from("cars").select("current_mileage").eq("id", state.activeCarId).maybeSingle();
+    if (car) document.getElementById("mileage-input").value = car.current_mileage || 0;
+  }
+  const query = state.activeCarId
+    ? db.from("service_records").select("*").eq("car_id", state.activeCarId)
+    : db.from("service_records").select("*").eq("client_id", state.clientId);
+
+  const { data: records } = await query;
+  const list = document.getElementById("records-list");
+  list.innerHTML = "";
+  const safeRecords = Array.isArray(records) ? records.slice().reverse() : new Array();
+
+  safeRecords.forEach((rec) => {
+    const div = document.createElement("div");
+    div.className = `card ${rec.is_official ? "card-green" : ""}`;
+    div.innerHTML = `
+      <div class="row-between">
+        <b style="color:${rec.is_official ? "var(--green)" : "inherit"}">${rec.is_official ? "✅ Запись СТО CreativAvto" : "Личная заметка"}</b>
+        ${!rec.is_official ? `<button class="icon-btn" style="color:var(--red); font-size:15px;" onclick="deleteRecord('${rec.id}')">🗑️</button>` : "🔒"}
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin:4px 0;">Дата: ${rec.record_date} | Пробег: ${rec.mileage} км</div>
+      <div class="pre-text">${rec.description}</div>`;
+    list.appendChild(div);
+  });
+}
+
+async function saveMileage() {
+  const db = getDb();
+  const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
+  if (state.activeCarId) await db.from("cars").update({ current_mileage: m }).eq("id", state.activeCarId);
+  await db.from("clients").update({ current_mileage: m }).eq("id", state.clientId);
+  alert("Пробег передан мастеру!");
+}
+
+async function addPersonalNote() {
+  const db = getDb();
+  const text = prompt("Что сделали по автомобилю?");
+  if (!text) return;
+  const mileage = parseInt(document.getElementById("mileage-input").value || "0", 10);
+  const today = new Date().toISOString().split("T").at(0);
+  await db.from("service_records").insert({
+    client_id: state.clientId, car_id: state.activeCarId || null,
+    record_date: today, mileage, description: text.trim(), is_official: false
+  });
+  loadServiceBook();
+}
+
+async function deleteRecord(id) {
+  const db = getDb();
+  await db.from("service_records").delete().eq("id", id);
+  loadServiceBook();
+}
+
+async function createAppointment() {
+  const db = getDb();
+  const problem = document.getElementById("problem-input").value.trim();
+  if (!problem) return alert("Опишите проблему");
+  const { error } = await db.from("appointments").insert({
+    client_id: state.clientId, car_id: state.activeCarId || null,
+    client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
+    client_phone: state.phone, problem_description: problem
+  });
+  if (error) return alert("Ошибка: " + error.message);
+  document.getElementById("problem-input").value = "";
+  alert("Заявка отправлена мастеру!");
+  loadAppointments();
+}
+
+function toggleArchive(arch) {
+  showArchive = arch;
+  document.getElementById("chip-current").classList.toggle("active", !arch);
+  document.getElementById("chip-archive").classList.toggle("active", arch);
+  loadAppointments();
+}
+
+async function loadAppointments() {
+  const db = getDb();
+  const { data: apps } = await db.from("appointments").select("*").eq("client_id", state.clientId);
+  const safeApps = Array.isArray(apps) ? apps.slice().reverse() : new Array();
+  const filtered = safeApps.filter((a) => {
+    const done = a.status === "Готово" || a.status === "Отменено клиентом";
+    return showArchive ? done : !done;
+  });
+
+  const list = document.getElementById("appointments-list");
+  list.innerHTML = filtered.length ? "" : `<div style="color:var(--muted); padding:12px 0;">Список пуст</div>`;
+
+  filtered.forEach((a) => {
+    const cancelled = a.status === "Отменено клиентом";
+    const cls = a.status === "Готово" ? "card-green" : cancelled ? "card-red" : "";
+    const div = document.createElement("div");
+    div.className = `card ${cls}`;
+    div.innerHTML = `
+      <b>Авто: ${a.car_model}</b>
+      <div style="margin:4px 0;">Жалоба: ${a.problem_description}</div>
+      ${a.visit_date ? `<div style="color:var(--primary); font-weight:700;">📅 Назначен визит: ${a.visit_date} в ${a.visit_time || ""}</div>` : ""}
+      ${a.master_comment ? `<div style="color:var(--green); font-weight:600;">💬 Ответ мастера: ${a.master_comment}</div>` : ""}
+      <div style="margin-top:6px; font-weight:700; color:${cancelled ? "var(--red)" : "var(--primary)"}">Статус: ${a.status}</div>
+      ${a.status !== "Готово" && !cancelled ? `<button class="btn btn-danger" style="margin-top:8px; padding:8px;" onclick="cancelAppointment('${a.id}')">Отменить заявку</button>` : ""}`;
+    list.appendChild(div);
+  });
+}
+
+async function cancelAppointment(id) {
+  const db = getDb();
+  await db.from("appointments").update({ status: "Отменено клиентом" }).eq("id", id);
+  loadAppointments();
+}
+
+function openMap() {
+  const addr = document.getElementById("sto-address-link").textContent.replace("📍 ", "");
+  window.open(`https://yandex.ru{encodeURIComponent(addr)}`, "_blank");
+}
+
+async function loadMessages() {
+  const db = getDb();
+  const { data: msgs } = await db.from("master_messages").select("*").eq("client_id", state.clientId);
+  const safeMsgs = Array.isArray(msgs) ? msgs.slice().reverse() : new Array();
+  const list = document.getElementById("messages-list");
+  list.innerHTML = safeMsgs.length ? "" : `<div style="color:var(--muted);">Новых уведомлений от мастера Николая пока нет</div>`;
+  safeMsgs.forEach((m) => {
+    const div = document.createElement("div");
+    div.className = "card card-blue";
+    div.innerHTML = `<div style="font-size:12px; font-weight:700; color:var(--primary); margin-bottom:4px;">✉️ Мастер Николай</div><div class="pre-text">${m.message_text}</div>`;
+    list.appendChild(div);
+  });
+}
+
+async function openSettings() {
+  const db = getDb();
+  Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
+  document.getElementById("bottom-nav").classList.add("hidden");
+  document.getElementById("tab-settings").classList.remove("hidden");
+  const { data: cl } = await db.from("clients").select("*").eq("id", state.clientId).maybeSingle();
+  if (cl) {
+    document.getElementById("set-name").value = cl.name;
+    document.getElementById("set-car").value = state.carModel;
+    document.getElementById("set-plate").value = state.carPlate;
+    document.getElementById("set-pass").value = cl.password;
+  }
+}
+
+function closeSettings() { switchTab(0); }
+
+async function saveProfileSettings() {
+  const db = getDb();
+  const name = document.getElementById("set-name").value.trim();
+  const carModel = document.getElementById("set-car").value.trim();
+  const carPlate = document.getElementById("set-plate").value.trim();
+  const password = document.getElementById("set-pass").value.trim();
+  await db.from("clients").update({ name, car_model: carModel, car_plate: carPlate, password }).eq("id", state.clientId);
+  if (state.activeCarId) await db.from("cars").update({ car_model: carModel, car_plate: carPlate }).eq("id", state.activeCarId);
+  saveSession({ name, carModel, carPlate });
+  alert("Профиль обновлён!");
+  closeSettings();
+}
+
+function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
+
+async function initApp() {
+  const db = getDb();
+  document.getElementById("auth-screen").classList.add("hidden");
+  document.getElementById("app-shell").classList.remove("hidden");
+  updateHeaderCar();
+  const { data: info } = await db.from("service_info").select("*").eq("id", 1).maybeSingle();
+  if (info) {
+    document.getElementById("sto-address-link").textContent = `📍 ${info.address}`;
+    const phoneEl = document.getElementById("sto-phone-link");
+    phoneEl.textContent = `📞 Мастер Николай: ${info.phone}`;
+    phoneEl.href = `tel:${info.phone}`;
+  }
+}
+
+if (state && state.clientId) initApp();

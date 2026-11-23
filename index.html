@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="CreativAvto" />
+  <link rel="apple-touch-icon" href="./icon-180.png" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./style.css" />
+  <title>CreativAvto Тамбов</title>
+</head>
+<body>
+
+  <!-- ЭКРАН АВТОРИЗАЦИИ И РЕГИСТРАЦИИ -->
+  <div id="auth-screen" class="auth-container">
+    <img src="./icon-180.png" alt="CreativAvto" class="auth-logo" />
+    <h2>CreativAvto Тамбов</h2>
+    <p id="auth-subtitle" class="muted-text">Регистрация автовладельца</p>
+
+    <div id="reg-fields">
+      <input id="auth-name" type="text" placeholder="Ваше имя" />
+      <input id="auth-car" type="text" placeholder="Марка и модель авто" />
+      <input id="auth-plate" type="text" placeholder="Госномер (необязательно)" />
+    </div>
+    <input id="auth-phone" type="tel" placeholder="Номер телефона (8999...)" />
+    <input id="auth-pass" type="password" placeholder="Кодовое слово (пароль)" />
+    <button id="auth-submit-btn" class="btn" onclick="handleAuth()">Создать сервисную книжку</button>
+    <button id="auth-toggle-btn" class="btn-link" onclick="toggleAuthMode()">Уже есть аккаунт / сменил телефон? Войти</button>
+  </div>
+
+  <!-- ОСНОВНОЙ ИНТЕРФЕЙС ПРИЛОЖЕНИЯ -->
+  <div id="app-shell" class="hidden">
+    <header>
+      <div class="header-left" onclick="openGarageModal()">
+        <div class="header-title">CreativAvto</div>
+        <div id="header-car" class="car-selector">🚗 Выбрать авто ▼</div>
+      </div>
+      <button class="icon-btn" onclick="openSettings()" aria-label="Настройки">⚙️</button>
+    </header>
+
+    <main>
+      <div id="ios-install-hint" class="ios-banner hidden">
+        📲 <b>Установите как приложение на iPhone:</b> нажмите внизу Safari <b>«Поделиться»</b> (квадрат со стрелкой вверх) → <b>«На экран „Домой“»</b>.
+      </div>
+
+      <!-- ВКЛАДКА 0: ДИАГНОСТ -->
+      <section id="tab-0">
+        <div id="diagnost-home" class="ai-hero">
+          <button class="ai-circle" onclick="openAiChat()">
+            <span class="ai-circle-icon">🔧</span>
+            <span>ИИ-Автомеханик</span>
+          </button>
+          <button class="btn btn-tonal" onclick="document.getElementById('dash-file').click()">
+            ⚠️ Расшифровать значки на приборке
+          </button>
+          <input id="dash-file" type="file" accept="image/*" class="hidden" onchange="handleDashboardPhoto(event)" />
+        </div>
+
+        <div id="diagnost-chat" class="hidden">
+          <div class="row-between">
+            <h3>ИИ-Автомеханик</h3>
+            <button class="btn-link-inline" onclick="closeAiChat()">Назад</button>
+          </div>
+          <textarea id="ai-question" rows="3" placeholder="Опишите марку авто и что случилось..."></textarea>
+          <button id="ai-ask-btn" class="btn" onclick="askAiMechanic()">Получить консультацию</button>
+          <div id="ai-answer-box" class="card hidden mt-14">
+            <div id="ai-answer-text" class="pre-text"></div>
+            <button class="btn mt-14" onclick="bookFromAi()">Отправить заявку в CreativAvto</button>
+          </div>
+        </div>
+      </section>
+      <!-- ВКЛАДКА 1: ЖУРНАЛ ТО -->
+      <section id="tab-1" class="hidden">
+        <h3 id="book-title">Сервисная книжка</h3>
+        <div class="row-gap mb-10">
+          <input id="mileage-input" type="number" inputmode="numeric" placeholder="Текущий пробег (км)" class="mb-0" />
+          <button class="btn btn-auto" onclick="saveMileage()">Сохранить</button>
+        </div>
+        <button class="btn mb-14" onclick="addPersonalNote()">+ Добавить свою заметку</button>
+        <div id="records-list"></div>
+      </section>
+
+      <!-- ВКЛАДКА 2: ЗАЯВКИ И СТО -->
+      <section id="tab-2" class="hidden">
+        <div class="card">
+          <div class="bold mb-8">Контакты автосервиса</div>
+          <div id="sto-address-link" class="link-primary mb-8" onclick="openMap()">📍 г. Тамбов, ул. Бабарыкина, д. 34А</div>
+          <a id="sto-phone-link" href="tel:89997704470" class="link-green">📞 Мастер Николай: 89997704470</a>
+        </div>
+
+        <h4 id="new-app-title" class="mb-8">Новая заявка</h4>
+        <textarea id="problem-input" rows="3" placeholder="Что нужно проверить или отремонтировать?"></textarea>
+        <button class="btn" onclick="createAppointment()">Отправить заявку на ремонт</button>
+
+        <div class="chips mt-18">
+          <button id="chip-current" class="chip active" onclick="toggleArchive(false)">Текущие</button>
+          <button id="chip-archive" class="chip" onclick="toggleArchive(true)">Архив</button>
+          <button class="icon-btn ml-auto" onclick="loadAppointments()">🔄</button>
+        </div>
+        <div id="appointments-list"></div>
+      </section>
+
+      <!-- ВКЛАДКА 3: УВЕДОМЛЕНИЯ -->
+      <section id="tab-3" class="hidden">
+        <div class="row-between mb-10">
+          <h3>Уведомления от СТО</h3>
+          <button class="icon-btn" onclick="loadMessages()">🔄</button>
+        </div>
+        <div id="messages-list"></div>
+      </section>
+
+      <!-- ЭКРАН НАСТРОЕК -->
+      <section id="tab-settings" class="hidden">
+        <div class="row-gap mb-12">
+          <button class="icon-btn" onclick="closeSettings()">←</button>
+          <h3>Настройки профиля</h3>
+        </div>
+        <div class="card">
+          <input id="set-name" type="text" placeholder="Ваше имя" />
+          <input id="set-car" type="text" placeholder="Активное авто" />
+          <input id="set-plate" type="text" placeholder="Госномер" />
+          <input id="set-pass" type="text" placeholder="Кодовое слово" />
+          <button class="btn" onclick="saveProfileSettings()">Сохранить профиль</button>
+        </div>
+        <button class="btn btn-danger" onclick="logout()">Выйти из аккаунта</button>
+      </section>
+    </main>
+
+    <nav id="bottom-nav">
+      <button class="nav-item active" onclick="switchTab(0)"><div>🔧</div>Диагност</button>
+      <button class="nav-item" onclick="switchTab(1)"><div>📋</div>Журнал ТО</button>
+      <button class="nav-item" onclick="switchTab(2)"><div>📅</div>Заявки и СТО</button>
+      <button class="nav-item" onclick="switchTab(3)"><div>🔔</div>Уведомления</button>
+    </nav>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО: МОЙ ГАРАЖ -->
+  <div id="garage-modal" class="modal-backdrop hidden" onclick="if(event.target===this) closeGarageModal()">
+    <div class="modal-sheet">
+      <div class="row-between mb-12">
+        <h3>Мой гараж (профили авто)</h3>
+        <button class="icon-btn" onclick="closeGarageModal()">✕</button>
+      </div>
+      <div id="garage-list"></div>
+      <hr class="divider" />
+      <input id="new-car-model" type="text" placeholder="Марка и модель нового авто" />
+      <input id="new-car-plate" type="text" placeholder="Госномер (необязательно)" />
+      <button class="btn" onclick="addCarToGarage()">Добавить машину</button>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

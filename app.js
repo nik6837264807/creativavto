@@ -80,7 +80,6 @@ function updateHeaderCar() {
   document.getElementById("book-title").textContent = `Сервисная книжка: ${state.carModel || ""}`;
   document.getElementById("new-app-title").textContent = `Новая заявка (${state.carModel || ""})`;
 }
-
 function toggleAuthMode() {
   isLoginMode = !isLoginMode;
   document.getElementById("reg-fields").classList.toggle("hidden", isLoginMode);
@@ -88,6 +87,7 @@ function toggleAuthMode() {
   document.getElementById("auth-submit-btn").textContent = isLoginMode ? "Войти и восстановить данные" : "Создать сервисную книжку";
   document.getElementById("auth-toggle-btn").textContent = isLoginMode ? "Впервые у нас? Зарегистрироваться" : "Уже есть аккаунт / сменил телефон? Войти";
 }
+
 async function handleAuth() {
   const db = getDb();
   const phone = document.getElementById("auth-phone").value.trim();
@@ -155,9 +155,11 @@ function switchTab(idx) {
 
   if (idx === 1) loadServiceBook();
   if (idx === 2) loadAppointments();
-  if (idx === 3) loadMessages();
+  if (idx === 3) {
+    loadMessages();
+    syncPushButtonState();
+  }
 }
-
 function openAiChat() {
   document.getElementById("diagnost-home").classList.add("hidden");
   document.getElementById("diagnost-chat").classList.remove("hidden");
@@ -191,6 +193,7 @@ async function askAiMechanic() {
   btn.disabled = false;
   btn.textContent = "Получить консультацию";
 }
+
 function resizeImageToBase64(file, maxSide = 1024) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -245,7 +248,6 @@ function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-question").value;
   switchTab(2);
 }
-
 async function openGarageModal() {
   const db = getDb();
   document.getElementById("garage-modal").classList.remove("hidden");
@@ -272,9 +274,7 @@ async function openGarageModal() {
   });
 }
 
-function closeGarageModal() {
-  document.getElementById("garage-modal").classList.add("hidden");
-}
+function closeGarageModal() { document.getElementById("garage-modal").classList.add("hidden"); }
 
 function selectCar(car) {
   saveSession({ activeCarId: car.id, carModel: car.car_model, carPlate: car.car_plate });
@@ -308,6 +308,7 @@ async function transferCar(carId, carModel) {
   alert(`Авто передано ${newOwner.name}!`);
   openGarageModal();
 }
+
 async function loadServiceBook() {
   const db = getDb();
   if (state.activeCarId) {
@@ -363,7 +364,6 @@ async function deleteRecord(id) {
   await db.from("service_records").delete().eq("id", id);
   loadServiceBook();
 }
-
 async function createAppointment() {
   const db = getDb();
   const problem = document.getElementById("problem-input").value.trim();
@@ -422,7 +422,8 @@ async function cancelAppointment(id) {
 
 function openMap() {
   const addr = document.getElementById("sto-address-link").textContent.replace("📍 ", "");
-  window.open(`https://yandex.ru{encodeURIComponent(addr)}`, "_blank");
+  const mapUrl = Array.of("https:/", "yandex.ru", "maps", "?text=").join("/") + encodeURIComponent(addr);
+  window.open(mapUrl, "_blank");
 }
 
 async function loadMessages() {
@@ -468,37 +469,104 @@ async function saveProfileSettings() {
   closeSettings();
 }
 
+function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
+
+async function initApp() {
+  const db = getDb();
+  document.getElementById("auth-screen").classList.add("hidden");
+  document.getElementById("app-shell").classList.remove("hidden");
+  updateHeaderCar();
+  const { data: info } = await db.from("service_info").select("*").eq("id", 1).maybeSingle();
+  if (info) {
+    document.getElementById("sto-address-link").textContent = `📍 ${info.address}`;
+    const phoneEl = document.getElementById("sto-phone-link");
+    phoneEl.textContent = `📞 Мастер Николай: ${info.phone}`;
+    phoneEl.href = `tel:${info.phone}`;
+  }
+}
+
+if (state && state.clientId) initApp();
+
+function getAppLinks() {
+  const androidUrl = Array.of("https:/", "github.com", "nik6837264807", "creativavto", "releases", "download", "v1.0", "app-client-debug.apk").join("/");
+  const iphoneUrl = Array.of("https:/", "nik6837264807.github.io", "creativavto", "").join("/");
+  return { androidUrl, iphoneUrl };
+}
+
 function openShareModal() {
-  const androidUrl = "https://github.com";
-  const iphoneUrl = "https://github.io";
-  const qrApi = "https://qrserver.com";
-
-  document.getElementById("qr-android-img").src = qrApi + encodeURIComponent(androidUrl);
-  document.getElementById("qr-iphone-img").src = qrApi + encodeURIComponent(iphoneUrl);
-
+  const { androidUrl, iphoneUrl } = getAppLinks();
+  const qrBase = Array.of("https:/", "://qrserver.com", "v1", "create-qr-code", "?size=240x240&data=").join("/");
+  document.getElementById("qr-android-img").src = qrBase + encodeURIComponent(androidUrl);
+  document.getElementById("qr-iphone-img").src = qrBase + encodeURIComponent(iphoneUrl);
   document.getElementById("share-modal").classList.remove("hidden");
 }
 
-function closeShareModal() {
-  document.getElementById("share-modal").classList.add("hidden");
-}
+function closeShareModal() { document.getElementById("share-modal").classList.add("hidden"); }
 
 async function shareBothLinks() {
-  const androidUrl = "https://github.com";
-  const iphoneUrl = "https://github.io";
+  const { androidUrl, iphoneUrl } = getAppLinks();
   const text =
     "Установи приложение автосервиса CreativAvto (Тамбов):\n\n" +
     "🤖 Для Android (скачать APK):\n" + androidUrl + "\n\n" +
     "🍎 Для iPhone (открыть в Safari → На экран «Домой»):\n" + iphoneUrl;
 
   if (navigator.share) {
-    try {
-      await navigator.share({ title: "CreativAvto Тамбов", text: text });
-    } catch (_) {}
+    try { await navigator.share({ title: "CreativAvto Тамбов", text: text }); } catch (_) {}
   } else if (navigator.clipboard) {
     await navigator.clipboard.writeText(text);
     alert("Обе ссылки скопированы в буфер обмена!");
   } else {
     prompt("Скопируйте ссылки:", text);
+  }
+}
+
+const VAPID_PUBLIC_KEY = "BMXC3T3ZuXjoqSH-2vTFnl5huR8fIPeXxWvtUQg7cbyMXNWJ75I2068C_NFiSoRC5QvA79SBkyFkHkl5yD_4ds8";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+function syncPushButtonState() {
+  const btn = document.getElementById("push-enable-btn");
+  if (!btn || !("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    btn.textContent = "✅ Уведомления включены";
+  }
+}
+
+async function enableIosPush() {
+  const btn = document.getElementById("push-enable-btn");
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+    return alert("На iPhone сначала добавьте сайт на экран «Домой» через меню «Поделиться» в Safari, затем откройте иконку с рабочего стола.");
+  }
+  btn.disabled = true;
+  btn.textContent = "Подключение...";
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      alert("Разрешение на уведомления отклонено в настройках телефона.");
+      btn.disabled = false;
+      btn.textContent = "Включить уведомления";
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+    const db = getDb();
+    await db.from("clients").update({ push_subscription: sub.toJSON() }).eq("id", state.clientId);
+    btn.textContent = "✅ Уведомления включены";
+    btn.disabled = false;
+    alert("Push-уведомления для iPhone успешно подключены!");
+  } catch (e) {
+    alert("Ошибка подписки: " + e.message);
+    btn.disabled = false;
+    btn.textContent = "Включить уведомления";
   }
 }

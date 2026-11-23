@@ -80,85 +80,87 @@ function updateHeaderCar() {
   document.getElementById("book-title").textContent = `Сервисная книжка: ${state.carModel || ""}`;
   document.getElementById("new-app-title").textContent = `Новая заявка (${state.carModel || ""})`;
 }
-function toggleAuthMode() {
-  isLoginMode = !isLoginMode;
-  document.getElementById("reg-fields").classList.toggle("hidden", isLoginMode);
-  document.getElementById("auth-subtitle").textContent = isLoginMode ? "Восстановление сервисной книжки" : "Регистрация автовладельца";
-  document.getElementById("auth-submit-btn").textContent = isLoginMode ? "Войти и восстановить данные" : "Создать сервисную книжку";
-  document.getElementById("auth-toggle-btn").textContent = isLoginMode ? "Впервые у нас? Зарегистрироваться" : "Уже есть аккаунт / сменил телефон? Войти";
-}
+function getDb() {
+  if (window._supaClient) return window._supaClient;
+  const projectId = "afrlwjzssgmlwxmzlmiq";
+  const baseUrl = "https://" + projectId + ".supabase.co";
+  const key = "sb_publishable_4e0HL2_orZvRoPKHQHUh3w_3Ch22UlU";
 
-async function handleAuth() {
-  const db = getDb();
-  const phone = document.getElementById("auth-phone").value.trim();
-  const password = document.getElementById("auth-pass").value.trim();
-  const btn = document.getElementById("auth-submit-btn");
-  btn.disabled = true;
+  window._supaClient = {
+    from(table) {
+      let filters = new Array();
+      let method = "GET";
+      let payload = null;
+      let isSingle = false;
+      const reqHeaders = { "apikey": key, "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
 
-  try {
-    if (isLoginMode) {
-      const { data: found, error } = await db.from("clients").select("*").eq("phone", phone).eq("password", password).maybeSingle();
-      if (error) throw error;
-      if (!found) {
-        alert("Неверный телефон или кодовое слово");
-        btn.disabled = false;
-        return;
+      const builder = {
+        select() { return builder; },
+        eq(col, val) { filters.push(`${col}=eq.${encodeURIComponent(val)}`); return builder; },
+        insert(data) { method = "POST"; payload = JSON.stringify(data); reqHeaders["Prefer"] = "return=representation"; return builder; },
+        update(data) { method = "PATCH"; payload = JSON.stringify(data); reqHeaders["Prefer"] = "return=representation"; return builder; },
+        delete() { method = "DELETE"; return builder; },
+        single() { isSingle = true; return builder; },
+        maybeSingle() { isSingle = true; return builder; },
+        async then(resolve) {
+          try {
+            const q = filters.length ? `?${filters.join("&")}` : "";
+            const res = await fetch(`${baseUrl}/rest/v1/${table}${q}`, { method, headers: reqHeaders, body: payload });
+            const text = await res.text();
+            const json = text ? JSON.parse(text) : null;
+            if (!res.ok) return resolve({ data: null, error: new Error(json?.message || res.statusText) });
+            const data = isSingle ? (Array.isArray(json) ? (json.at(0) || null) : json) : json;
+            resolve({ data, error: null });
+          } catch (error) {
+            resolve({ data: null, error });
+          }
+        }
+      };
+      return builder;
+    },
+    functions: {
+      async invoke(fnName, { body }) {
+        try {
+          const reqHeaders = { "apikey": key, "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
+          const res = await fetch(`${baseUrl}/functions/v1/${fnName}`, { method: "POST", headers: reqHeaders, body: JSON.stringify(body) });
+          const data = await res.json();
+          return res.ok ? { data, error: null } : { data: null, error: new Error(data?.error || res.statusText) };
+        } catch (error) {
+          return { data: null, error };
+        }
       }
-      const { data: cars } = await db.from("cars").select("*").eq("client_id", found.id);
-      const firstCar = Array.isArray(cars) && cars.length > 0 ? cars.at(0) : null;
-      saveSession({
-        clientId: found.id, name: found.name, phone: found.phone,
-        activeCarId: firstCar ? firstCar.id : "",
-        carModel: firstCar ? firstCar.car_model : found.car_model,
-        carPlate: firstCar ? firstCar.car_plate : found.car_plate
-      });
-      initApp();
-    } else {
-      const name = document.getElementById("auth-name").value.trim();
-      const carModel = document.getElementById("auth-car").value.trim();
-      const carPlate = document.getElementById("auth-plate").value.trim();
-      if (!name || !carModel || !phone || !password) {
-        alert("Заполните обязательные поля");
-        btn.disabled = false;
-        return;
-      }
-      const { data: inserted, error } = await db.from("clients")
-        .insert({ name, car_model: carModel, car_plate: carPlate, phone, password })
-        .select().single();
-      if (error) throw error;
-
-      const { data: insertedCar } = await db.from("cars")
-        .insert({ client_id: inserted.id, car_model: carModel, car_plate: carPlate })
-        .select().single();
-
-      saveSession({
-        clientId: inserted.id, name: inserted.name, phone: inserted.phone,
-        activeCarId: insertedCar ? insertedCar.id : "", carModel, carPlate
-      });
-      initApp();
     }
-  } catch (e) {
-    alert("Ошибка сети: " + e.message);
-  }
-  btn.disabled = false;
+  };
+  return window._supaClient;
 }
 
-function switchTab(idx) {
-  const tabs = Array.of(0, 1, 2, 3);
-  const navItems = document.querySelectorAll(".nav-item");
-  tabs.forEach((i) => {
-    document.getElementById(`tab-${i}`).classList.toggle("hidden", i !== idx);
-    if (navItems.item(i)) navItems.item(i).classList.toggle("active", i === idx);
-  });
-  document.getElementById("tab-settings").classList.add("hidden");
-  document.getElementById("bottom-nav").classList.remove("hidden");
+var isLoginMode = false;
+var showArchive = false;
+var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
-  if (idx === 1) loadServiceBook();
-  if (idx === 2) loadAppointments();
-  if (idx === 3) {
-    loadMessages();
-    syncPushButtonState();
-  }
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+
+var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+var isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+if (isIos && !isStandalone) {
+  document.getElementById("ios-install-hint").classList.remove("hidden");
+}
+
+function saveSession(data) {
+  state = { ...(state || {}), ...data };
+  localStorage.setItem("creativavto_session", JSON.stringify(state));
+  updateHeaderCar();
+}
+
+function updateHeaderCar() {
+  if (!state) return;
+  const plate = state.carPlate ? ` (${state.carPlate})` : "";
+  const label = `${state.carModel || "Выбрать авто"}${plate}`;
+  document.getElementById("header-car").textContent = `🚗 ${label} ▼`;
+  document.getElementById("book-title").textContent = `Сервисная книжка: ${state.carModel || ""}`;
+  document.getElementById("new-app-title").textContent = `Новая заявка (${state.carModel || ""})`;
 }
 function openAiChat() {
   document.getElementById("diagnost-home").classList.add("hidden");
@@ -570,4 +572,3 @@ async function enableIosPush() {
     btn.textContent = "Включить уведомления";
   }
 }
-

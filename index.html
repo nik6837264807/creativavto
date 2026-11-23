@@ -71,6 +71,7 @@
           </div>
         </div>
       </section>
+
       <!-- ВКЛАДКА 1: ЖУРНАЛ ТО -->
       <section id="tab-1" class="hidden">
         <h3 id="book-title">Сервисная книжка</h3>
@@ -81,9 +82,10 @@
         <button class="btn mb-14" onclick="addPersonalNote()">+ Добавить свою заметку</button>
         <div id="records-list"></div>
       </section>
-
       <!-- ВКЛАДКА 2: ЗАЯВКИ И СТО -->
       <section id="tab-2" class="hidden">
+        <button class="btn btn-tonal mb-12" onclick="openShareModal()">📲 Поделиться приложением с другом</button>
+
         <div class="card">
           <div class="bold mb-8">Контакты автосервиса</div>
           <div id="sto-address-link" class="link-primary mb-8" onclick="openMap()">📍 г. Тамбов, ул. Бабарыкина, д. 34А</div>
@@ -148,6 +150,28 @@
       <input id="new-car-model" type="text" placeholder="Марка и модель нового авто" />
       <input id="new-car-plate" type="text" placeholder="Госномер (необязательно)" />
       <button class="btn" onclick="addCarToGarage()">Добавить машину</button>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО: ПОДЕЛИТЬСЯ ПРИЛОЖЕНИЕМ -->
+  <div id="share-modal" class="modal-backdrop hidden" onclick="if(event.target===this) closeShareModal()">
+    <div class="modal-sheet" style="text-align:center;">
+      <div class="row-between mb-12">
+        <h3>Поделиться CreativAvto</h3>
+        <button class="icon-btn" onclick="closeShareModal()">✕</button>
+      </div>
+      <div class="muted-text" style="margin-bottom:14px; font-size:14px;">Покажите нужный QR-код другу:</div>
+      <div class="row-gap" style="justify-content:space-around; margin-bottom:16px;">
+        <div>
+          <div style="font-weight:700; color:var(--green); margin-bottom:6px;">Android</div>
+          <img id="qr-android-img" alt="QR Android" style="width:140px; height:140px; border-radius:10px; border:1px solid var(--border);" />
+        </div>
+        <div>
+          <div style="font-weight:700; color:var(--primary); margin-bottom:6px;">iPhone</div>
+          <img id="qr-iphone-img" alt="QR iPhone" style="width:140px; height:140px; border-radius:10px; border:1px solid var(--border);" />
+        </div>
+      </div>
+      <button class="btn" onclick="shareBothLinks()">📤 Отправить ссылку</button>
     </div>
   </div>
 

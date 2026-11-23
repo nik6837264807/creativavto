@@ -1,4 +1,4 @@
-const CACHE_NAME = "creativavto-pwa-15";
+const CACHE_NAME = "creativavto-pwa-v16";
 const ASSETS = Array.of(
   "./",
   "./index.html",
@@ -8,10 +8,10 @@ const ASSETS = Array.of(
 );
 
 self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -20,9 +20,8 @@ self.addEventListener("activate", (event) => {
       Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       )
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -33,19 +32,26 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = { title: "CreativAvto Тамбов", body: "Новое сообщение от мастера Николая" };
-  try {
-    if (event.data) payload = event.data.json();
-  } catch (_) {
-    if (event.data) payload.body = event.data.text();
+  let title = "CreativAvto Тамбов";
+  let body = "Новое уведомление от автосервиса";
+
+  if (event.data) {
+    try {
+      const json = event.data.json();
+      if (json.title) title = json.title;
+      if (json.body) body = json.body;
+    } catch (_) {
+      body = event.data.text();
+    }
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || "CreativAvto Тамбов", {
-      body: payload.body || "",
+    self.registration.showNotification(title, {
+      body: body,
       icon: "./icon-180.png",
       badge: "./icon-180.png",
-      vibrate: Array.of(200, 100, 200)
+      tag: "creativavto-" + Date.now(),
+      renotify: true
     })
   );
 });

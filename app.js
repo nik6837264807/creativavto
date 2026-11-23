@@ -520,7 +520,7 @@ async function shareBothLinks() {
   }
 }
 
-const VAPID_PUBLIC_KEY = "BMXC3I3ZuXjoqSH-2vTEnL5huR8ElPeXxWotUQgZcbyMXNWJ75JZ068C_NFiSoRC5QvAZ9S8kyEkHkL5yD_4ds8";
+const VAPID_PUBLIC_KEY = "BAFCbvT7kBU7ZV3hCwfBfuKYoAr7wid2yW7rpY49zCRMdjuUox10_zeDtUAfuL_B5SBzb9zLRCa0UGiOSv62ZD8";
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);

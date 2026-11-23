@@ -468,20 +468,37 @@ async function saveProfileSettings() {
   closeSettings();
 }
 
-function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
+function openShareModal() {
+  const androidUrl = "https://github.com";
+  const iphoneUrl = "https://github.io";
+  const qrApi = "https://qrserver.com";
 
-async function initApp() {
-  const db = getDb();
-  document.getElementById("auth-screen").classList.add("hidden");
-  document.getElementById("app-shell").classList.remove("hidden");
-  updateHeaderCar();
-  const { data: info } = await db.from("service_info").select("*").eq("id", 1).maybeSingle();
-  if (info) {
-    document.getElementById("sto-address-link").textContent = `📍 ${info.address}`;
-    const phoneEl = document.getElementById("sto-phone-link");
-    phoneEl.textContent = `📞 Мастер Николай: ${info.phone}`;
-    phoneEl.href = `tel:${info.phone}`;
-  }
+  document.getElementById("qr-android-img").src = qrApi + encodeURIComponent(androidUrl);
+  document.getElementById("qr-iphone-img").src = qrApi + encodeURIComponent(iphoneUrl);
+
+  document.getElementById("share-modal").classList.remove("hidden");
 }
 
-if (state && state.clientId) initApp();
+function closeShareModal() {
+  document.getElementById("share-modal").classList.add("hidden");
+}
+
+async function shareBothLinks() {
+  const androidUrl = "https://github.com";
+  const iphoneUrl = "https://github.io";
+  const text =
+    "Установи приложение автосервиса CreativAvto (Тамбов):\n\n" +
+    "🤖 Для Android (скачать APK):\n" + androidUrl + "\n\n" +
+    "🍎 Для iPhone (открыть в Safari → На экран «Домой»):\n" + iphoneUrl;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "CreativAvto Тамбов", text: text });
+    } catch (_) {}
+  } else if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    alert("Обе ссылки скопированы в буфер обмена!");
+  } else {
+    prompt("Скопируйте ссылки:", text);
+  }
+}

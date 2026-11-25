@@ -54,6 +54,8 @@ function getDb() {
 
 var isLoginMode = false;
 var showArchive = false;
+var selectedPlanId = "plan_6m";
+var cachedPlans = new Array();
 var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
 if ("serviceWorker" in navigator) {
@@ -110,7 +112,8 @@ async function handleAuth() {
         clientId: found.id, name: found.name, phone: found.phone,
         activeCarId: firstCar ? firstCar.id : "",
         carModel: firstCar ? firstCar.car_model : found.car_model,
-        carPlate: firstCar ? firstCar.car_plate : found.car_plate
+        carPlate: firstCar ? firstCar.car_plate : found.car_plate,
+        subscriptionUntil: found.subscription_until || null
       });
       initApp();
     } else {
@@ -133,7 +136,8 @@ async function handleAuth() {
 
       saveSession({
         clientId: inserted.id, name: inserted.name, phone: inserted.phone,
-        activeCarId: insertedCar ? insertedCar.id : "", carModel, carPlate
+        activeCarId: insertedCar ? insertedCar.id : "", carModel, carPlate,
+        subscriptionUntil: inserted.subscription_until || null
       });
       initApp();
     }
@@ -154,6 +158,7 @@ function switchTab(idx) {
   document.getElementById("tab-settings")?.classList.add("hidden");
   document.getElementById("bottom-nav")?.classList.remove("hidden");
 
+  if (idx === 0) refreshSubscriptionStatus();
   if (idx === 1) loadServiceBook();
   if (idx === 2) loadAppointments();
   if (idx === 3) {
@@ -161,7 +166,109 @@ function switchTab(idx) {
     syncPushButtonState();
   }
 }
+function isSubscriptionActive() {
+  if (!state || !state.subscriptionUntil) return false;
+  return new Date(state.subscriptionUntil).getTime() > Date.now();
+}
+
+function applySubscriptionUi() {
+  const active = isSubscriptionActive();
+  const unlockedEl = document.getElementById("ai-unlocked-area");
+  const lockedEl = document.getElementById("ai-locked-area");
+  const statusEl = document.getElementById("sub-status-text");
+
+  if (unlockedEl && lockedEl) {
+    unlockedEl.classList.toggle("hidden", !active);
+    lockedEl.classList.toggle("hidden", active);
+  }
+  if (statusEl) {
+    if (active) {
+      const dt = new Date(state.subscriptionUntil).toLocaleDateString("ru-RU");
+      statusEl.innerHTML = `<span style="color:var(--green); font-weight:700;">✅ Активна до ${dt}</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color:var(--red); font-weight:700;">⛔ Не активна (ИИ первого экрана ограничен)</span>`;
+    }
+  }
+  if (!active) loadSubscriptionPlans();
+}
+
+async function refreshSubscriptionStatus() {
+  if (!state || !state.clientId) return;
+  const db = getDb();
+  const { data: cl } = await db.from("clients").select("subscription_until").eq("id", state.clientId).maybeSingle();
+  if (cl) {
+    saveSession({ subscriptionUntil: cl.subscription_until || null });
+  }
+  applySubscriptionUi();
+}
+
+async function loadSubscriptionPlans() {
+  const db = getDb();
+  const { data: plans } = await db.from("subscription_plans").select("*").eq("is_active", true);
+  cachedPlans = Array.isArray(plans) ? plans.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)) : new Array();
+  if (cachedPlans.length > 0 && !cachedPlans.some((p) => p.id === selectedPlanId)) {
+    selectedPlanId = cachedPlans.at(0).id;
+  }
+  renderPlansList();
+}
+
+function renderPlansList() {
+  const box = document.getElementById("plans-list");
+  if (!box) return;
+  box.innerHTML = "";
+  cachedPlans.forEach((p) => {
+    const picked = p.id === selectedPlanId;
+    const div = document.createElement("div");
+    div.className = "card";
+    div.style.cssText = `cursor:pointer; margin-bottom:8px; border:2px solid ${picked ? "var(--primary)" : "var(--border)"}; background:${picked ? "#eff6ff" : "#fff"};`;
+    div.innerHTML = `
+      <div class="row-between">
+        <div>
+          <b>${p.title}</b> ${p.badge ? `<span style="background:var(--green); color:#fff; font-size:11px; padding:2px 7px; border-radius:99px; margin-left:6px;">${p.badge}</span>` : ""}
+          <div style="font-size:12px; color:var(--muted);">Доступ к ИИ-Автомеханику на ${p.months} мес.</div>
+        </div>
+        <div style="font-size:18px; font-weight:800; color:var(--primary);">${p.price_rub} ₽</div>
+      </div>`;
+    div.onclick = () => { selectedPlanId = p.id; renderPlansList(); };
+    box.appendChild(div);
+  });
+}
+
+async function startSubscriptionPayment() {
+  const cb = document.getElementById("agree-terms-cb");
+  if (!cb || !cb.checked) {
+    return alert("Пожалуйста, поставьте галочку согласия с условиями оферты и уведомлением о возможном изменении цен.");
+  }
+  const btn = document.getElementById("pay-sub-btn");
+  btn.disabled = true;
+  btn.textContent = "Переход к оплате...";
+  try {
+    const db = getDb();
+    const returnUrl = Array.of("https:/", "nik6837264807.github.io", "creativavto", "").join("/");
+    const { data, error } = await db.functions.invoke("create-yookassa-payment", {
+      body: { client_id: state.clientId, plan_id: selectedPlanId, return_url: returnUrl }
+    });
+    if (error) throw error;
+    if (data?.confirmation_url) {
+      window.location.href = data.confirmation_url;
+      return;
+    }
+    throw new Error("Не получена ссылка на оплату");
+  } catch (e) {
+    alert(e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = "💳 Оплатить подписку (ЮKassa)";
+}
+
+function openSubscriptionScreen() {
+  switchTab(0);
+  document.getElementById("ai-unlocked-area")?.classList.add("hidden");
+  document.getElementById("ai-locked-area")?.classList.remove("hidden");
+  loadSubscriptionPlans();
+}
 function openAiChat() {
+  if (!isSubscriptionActive()) return applySubscriptionUi();
   document.getElementById("diagnost-home").classList.add("hidden");
   document.getElementById("diagnost-chat").classList.remove("hidden");
 }
@@ -173,6 +280,7 @@ function closeAiChat() {
 }
 
 async function askAiMechanic() {
+  if (!isSubscriptionActive()) return applySubscriptionUi();
   const db = getDb();
   const prompt = document.getElementById("ai-question").value.trim();
   if (!prompt) return;
@@ -219,6 +327,10 @@ function resizeImageToBase64(file, maxSide = 1024) {
 }
 
 async function handleDashboardPhoto(event) {
+  if (!isSubscriptionActive()) {
+    event.target.value = "";
+    return applySubscriptionUi();
+  }
   const db = getDb();
   const file = event.target.files?.item(0);
   if (!file) return;
@@ -338,6 +450,28 @@ async function loadServiceBook() {
     list.appendChild(div);
   });
 }
+
+async function exportServiceBookPdf() {
+  const db = getDb();
+  const query = state.activeCarId
+    ? db.from("service_records").select("*").eq("car_id", state.activeCarId)
+    : db.from("service_records").select("*").eq("client_id", state.clientId);
+  const { data: records } = await query;
+  const rows = Array.isArray(records) ? records : new Array();
+  const tableRows = rows.length
+    ? rows.map((r) => `<tr><td>${r.record_date}</td><td>${r.mileage} км</td><td>${r.is_official ? "СТО CreativAvto" : "Личная запись"}</td><td>${String(r.description || "").replace(/\n/g, "<br>")}</td></tr>`).join("")
+    : `<tr><td colspan="4">Записей в сервисной книжке пока нет</td></tr>`;
+
+  const w = window.open("", "_blank");
+  if (!w) return alert("Разрешите открытие всплывающего окна для сохранения PDF");
+  w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Сервисная книжка — ${state.carModel}</title>
+    <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px;margin-bottom:4px}p{color:#444;margin-top:0}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:13px}th{background:#f3f4f6}</style>
+    </head><body><h1>Электронная сервисная книжка — CreativAvto Тамбов</h1>
+    <p><b>Владелец:</b> ${state.name} (${state.phone}) | <b>Автомобиль:</b> ${state.carModel} ${state.carPlate || ""}</p>
+    <table><thead><tr><th>Дата</th><th>Пробег</th><th>Источник</th><th>Выполненные работы</th></tr></thead><tbody>${tableRows}</tbody></table>
+    <script>window.onload=function(){window.print();};<\/script></body></html>`);
+  w.document.close();
+}
 async function saveMileage() {
   const db = getDb();
   const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
@@ -420,6 +554,7 @@ async function cancelAppointment(id) {
   await db.from("appointments").update({ status: "Отменено клиентом" }).eq("id", id);
   loadAppointments();
 }
+
 function openMap() {
   const addr = document.getElementById("sto-address-link").textContent.replace("📍 ", "");
   const mapUrl = Array.of("https:/", "yandex.ru", "maps", "?text=").join("/") + encodeURIComponent(addr);
@@ -439,12 +574,12 @@ async function loadMessages() {
     list.appendChild(div);
   });
 }
-
 async function openSettings() {
   const db = getDb();
   Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
   document.getElementById("bottom-nav").classList.add("hidden");
   document.getElementById("tab-settings").classList.remove("hidden");
+  applySubscriptionUi();
   const { data: cl } = await db.from("clients").select("*").eq("id", state.clientId).maybeSingle();
   if (cl) {
     document.getElementById("set-name").value = cl.name;
@@ -476,6 +611,7 @@ async function initApp() {
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app-shell").classList.remove("hidden");
   updateHeaderCar();
+  refreshSubscriptionStatus();
   const { data: info } = await db.from("service_info").select("*").eq("id", 1).maybeSingle();
   if (info) {
     document.getElementById("sto-address-link").textContent = `📍 ${info.address}`;
@@ -520,7 +656,7 @@ async function shareBothLinks() {
   }
 }
 
-const VAPID_PUBLIC_KEY = "BAFCbvT7kBU7ZV3hCwfBfuKYoAr7wid2yW7rpY49zCRMdjuUox10_zeDtUAfuL_B5SBzb9zLRCa0UGiOSv62ZD8";
+const VAPID_PUBLIC_KEY = "BMXC3T3ZuXjoqSH-2vTFnl5huR8fIPeXxWvtUQg7cbyMXNWJ75I2068C_NFiSoRC5QvA79SBkyFkHkl5yD_4ds8";
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -543,7 +679,7 @@ async function enableIosPush() {
     return alert("На iPhone сначала добавьте сайт на экран «Домой» через меню «Поделиться» в Safari, затем откройте иконку с рабочего стола.");
   }
   btn.disabled = true;
-  btn.textContent = "Подключение...";
+  btn.textContent = "Переподключение...";
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
@@ -553,6 +689,10 @@ async function enableIosPush() {
       return;
     }
     const reg = await navigator.serviceWorker.ready;
+    await reg.update();
+    const oldSub = await reg.pushManager.getSubscription();
+    if (oldSub) await oldSub.unsubscribe();
+
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
@@ -561,10 +701,11 @@ async function enableIosPush() {
     await db.from("clients").update({ push_subscription: sub.toJSON() }).eq("id", state.clientId);
     btn.textContent = "✅ Уведомления включены";
     btn.disabled = false;
-    alert("Push-уведомления для iPhone успешно подключены!");
+    alert("Подписка iPhone обновлена на новый Service Worker!");
   } catch (e) {
     alert("Ошибка подписки: " + e.message);
     btn.disabled = false;
     btn.textContent = "Включить уведомления";
   }
 }
+

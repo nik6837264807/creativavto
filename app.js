@@ -1,55 +1,118 @@
 function getDb() {
-  if (window._supaClient) return window._supaClient;
-  const projectId = "afrlwjzssgmlwxmzlmiq";
-  const baseUrl = "https://" + projectId + ".supabase.co";
-  const key = "sb_publishable_4e0HL2_orZvRoPKHQHUh3w_3Ch22UlU";
+  if (window._fsClient) return window._fsClient;
+  const projectId = "creativavto-f7bee";
+  const host = "https://" + "://googleapis.com";
+  const baseUrl = `${host}/v1/projects/${projectId}/databases/(default)/documents`;
 
-  window._supaClient = {
+  const fromFsVal = (obj) => {
+    if (!obj || "nullValue" in obj) return null;
+    if ("booleanValue" in obj) return obj.booleanValue;
+    if ("integerValue" in obj) return Number(obj.integerValue);
+    if ("doubleValue" in obj) return Number(obj.doubleValue);
+    if ("stringValue" in obj) return obj.stringValue;
+    if ("arrayValue" in obj) return (obj.arrayValue.values || new Array()).map(fromFsVal);
+    if ("mapValue" in obj) {
+      const res = {};
+      for (const [k, v] of Object.entries(obj.mapValue.fields || {})) res[k] = fromFsVal(v);
+      return res;
+    }
+    return null;
+  };
+
+  const toFsVal = (v) => {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === "boolean") return { booleanValue: v };
+    if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    if (Array.isArray(v)) return { arrayValue: { values: v.map(toFsVal) } };
+    if (typeof v === "object") {
+      const fields = {};
+      for (const [k, val] of Object.entries(v)) fields[k] = toFsVal(val);
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(v) };
+  };
+
+  const parseDoc = (doc) => {
+    const id = doc.name.split("/").pop();
+    const out = { id };
+    for (const [k, v] of Object.entries(doc.fields || {})) out[k] = fromFsVal(v);
+    return out;
+  };
+
+  window._fsClient = {
     from(table) {
-      let filters = new Array();
-      let method = "GET";
-      let payload = null;
-      let isSingle = false;
-      const reqHeaders = { "apikey": key, "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
-
-      const builder = {
-        select() { return builder; },
-        eq(col, val) { filters.push(`${col}=eq.${encodeURIComponent(val)}`); return builder; },
-        insert(data) { method = "POST"; payload = JSON.stringify(data); reqHeaders["Prefer"] = "return=representation"; return builder; },
-        update(data) { method = "PATCH"; payload = JSON.stringify(data); reqHeaders["Prefer"] = "return=representation"; return builder; },
-        delete() { method = "DELETE"; return builder; },
-        single() { isSingle = true; return builder; },
-        maybeSingle() { isSingle = true; return builder; },
+      let filters = new Array(), method = "GET", payload = null, isSingle = false;
+      const b = {
+        select() { return b; },
+        eq(col, val) { filters.push({ col, val }); return b; },
+        insert(data) { method = "POST"; payload = data; return b; },
+        update(data) { method = "PATCH"; payload = data; return b; },
+        delete() { method = "DELETE"; return b; },
+        single() { isSingle = true; return b; },
+        maybeSingle() { isSingle = true; return b; },
         async then(resolve) {
           try {
-            const q = filters.length ? `?${filters.join("&")}` : "";
-            const res = await fetch(`${baseUrl}/rest/v1/${table}${q}`, { method, headers: reqHeaders, body: payload });
-            const text = await res.text();
-            const json = text ? JSON.parse(text) : null;
-            if (!res.ok) return resolve({ data: null, error: new Error(json?.message || res.statusText) });
-            const data = isSingle ? (Array.isArray(json) ? (json.at(0) || null) : json) : json;
-            resolve({ data, error: null });
-          } catch (error) {
-            resolve({ data: null, error });
-          }
+            const idFilter = filters.find((f) => f.col === "id");
+            if (method === "GET") {
+              if (idFilter) {
+                const r = await fetch(`${baseUrl}/${table}/${encodeURIComponent(idFilter.val)}`);
+                if (!r.ok) return resolve({ data: null, error: null });
+                return resolve({ data: parseDoc(await r.json()), error: null });
+              }
+              const r = await fetch(`${baseUrl}/${table}?pageSize=500`);
+              const json = await r.json();
+              let rows = (json.documents || new Array()).map(parseDoc);
+              for (const f of filters) rows = rows.filter((row) => String(row[f.col]) === String(f.val));
+              return resolve({ data: isSingle ? (rows.at(0) || null) : rows, error: null });
+            }
+            if (method === "POST") {
+              const fields = {};
+              for (const [k, v] of Object.entries(payload)) if (k !== "id") fields[k] = toFsVal(v);
+              const r = await fetch(`${baseUrl}/${table}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+              const doc = await r.json();
+              return resolve({ data: parseDoc(doc), error: r.ok ? null : new Error(doc.error?.message || "Insert error") });
+            }
+            if (method === "PATCH") {
+              let targets = idFilter ? Array.of(String(idFilter.val)) : new Array();
+              if (!idFilter && filters.length) {
+                const rGet = await fetch(`${baseUrl}/${table}?pageSize=500`);
+                const jGet = await rGet.json();
+                let rows = (jGet.documents || new Array()).map(parseDoc);
+                for (const f of filters) rows = rows.filter((row) => String(row[f.col]) === String(f.val));
+                targets = rows.map((row) => row.id);
+              }
+              const fields = {}, mask = new Array();
+              for (const [k, v] of Object.entries(payload)) { fields[k] = toFsVal(v); mask.push(`updateMask.fieldPaths=${encodeURIComponent(k)}`); }
+              let lastDoc = null;
+              for (const tid of targets) {
+                const r = await fetch(`${baseUrl}/${table}/${encodeURIComponent(tid)}?${mask.join("&")}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+                if (r.ok) lastDoc = parseDoc(await r.json());
+              }
+              return resolve({ data: lastDoc, error: null });
+            }
+            if (method === "DELETE" && idFilter) {
+              await fetch(`${baseUrl}/${table}/${encodeURIComponent(idFilter.val)}`, { method: "DELETE" });
+              return resolve({ data: null, error: null });
+            }
+            resolve({ data: null, error: null });
+          } catch (error) { resolve({ data: null, error }); }
         }
       };
-      return builder;
+      return b;
     },
     functions: {
       async invoke(fnName, { body }) {
         try {
-          const reqHeaders = { "apikey": key, "Authorization": `Bearer ${key}`, "Content-Type": "application/json" };
-          const res = await fetch(`${baseUrl}/functions/v1/${fnName}`, { method: "POST", headers: reqHeaders, body: JSON.stringify(body) });
-          const data = await res.json();
-          return res.ok ? { data, error: null } : { data: null, error: new Error(data?.error || res.statusText) };
-        } catch (error) {
-          return { data: null, error };
-        }
+          const fallbackHost = Array.of("https:/", "afrlwjzssgmlwxmzlmiq.supabase.co").join("/");
+          const url = window.CLOUD_FUNCTIONS_BASE ? `${window.CLOUD_FUNCTIONS_BASE}/${fnName}` : `${fallbackHost}/functions/v1/${fnName}`;
+          const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const data = await r.json();
+          return r.ok ? { data, error: null } : { data: null, error: new Error(data?.error || r.statusText) };
+        } catch (error) { return { data: null, error }; }
       }
     }
   };
-  return window._supaClient;
+  return window._fsClient;
 }
 
 var isLoginMode = false;
@@ -73,7 +136,6 @@ function saveSession(data) {
   localStorage.setItem("creativavto_session", JSON.stringify(state));
   updateHeaderCar();
 }
-
 function updateHeaderCar() {
   if (!state) return;
   const plate = state.carPlate ? ` (${state.carPlate})` : "";
@@ -82,6 +144,7 @@ function updateHeaderCar() {
   document.getElementById("book-title").textContent = `Сервисная книжка: ${state.carModel || ""}`;
   document.getElementById("new-app-title").textContent = `Новая заявка (${state.carModel || ""})`;
 }
+
 function toggleAuthMode() {
   isLoginMode = !isLoginMode;
   document.getElementById("reg-fields").classList.toggle("hidden", isLoginMode);
@@ -122,16 +185,17 @@ async function handleAuth() {
       const carPlate = document.getElementById("auth-plate").value.trim();
       if (!name || !carModel || !phone || !password) {
         alert("Заполните обязательные поля");
+
         btn.disabled = false;
         return;
       }
       const { data: inserted, error } = await db.from("clients")
-        .insert({ name, car_model: carModel, car_plate: carPlate, phone, password })
+        .insert({ name, car_model: carModel, car_plate: carPlate, phone, password, current_mileage: 0, subscription_plan: "free", trial_granted_days: 0 })
         .select().single();
       if (error) throw error;
 
       const { data: insertedCar } = await db.from("cars")
-        .insert({ client_id: inserted.id, car_model: carModel, car_plate: carPlate })
+        .insert({ client_id: inserted.id, car_model: carModel, car_plate: carPlate, current_mileage: 0 })
         .select().single();
 
       saveSession({
@@ -166,6 +230,7 @@ function switchTab(idx) {
     syncPushButtonState();
   }
 }
+
 function isSubscriptionActive() {
   if (!state || !state.subscriptionUntil) return false;
   return new Date(state.subscriptionUntil).getTime() > Date.now();
@@ -220,6 +285,8 @@ function renderPlansList() {
     const picked = p.id === selectedPlanId;
     const div = document.createElement("div");
     div.className = "card";
+
+
     div.style.cssText = `cursor:pointer; margin-bottom:8px; border:2px solid ${picked ? "var(--primary)" : "var(--border)"}; background:${picked ? "#eff6ff" : "#fff"};`;
     div.innerHTML = `
       <div class="row-between">
@@ -361,6 +428,7 @@ function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-question").value;
   switchTab(2);
 }
+
 async function openGarageModal() {
   const db = getDb();
   document.getElementById("garage-modal").classList.remove("hidden");
@@ -401,7 +469,7 @@ async function addCarToGarage() {
   const plate = document.getElementById("new-car-plate").value.trim();
   if (!model) return;
   const { data: added } = await db.from("cars")
-    .insert({ client_id: state.clientId, car_model: model, car_plate: plate })
+    .insert({ client_id: state.clientId, car_model: model, car_plate: plate, current_mileage: 0 })
     .select().single();
   if (added) {
     document.getElementById("new-car-model").value = "";
@@ -413,6 +481,7 @@ async function addCarToGarage() {
 async function transferCar(carId, carModel) {
   const db = getDb();
   const targetPhone = prompt(`Передача авто «${carModel}».\nВведите телефон нового владельца:`);
+
   if (!targetPhone) return;
   const { data: newOwner } = await db.from("clients").select("*").eq("phone", targetPhone.trim()).maybeSingle();
   if (!newOwner) return alert("Пользователь с таким номером не найден!");
@@ -461,7 +530,6 @@ async function exportServiceBookPdf() {
   const tableRows = rows.length
     ? rows.map((r) => `<tr><td>${r.record_date}</td><td>${r.mileage} км</td><td>${r.is_official ? "СТО CreativAvto" : "Личная запись"}</td><td>${String(r.description || "").replace(/\n/g, "<br>")}</td></tr>`).join("")
     : `<tr><td colspan="4">Записей в сервисной книжке пока нет</td></tr>`;
-
   const w = window.open("", "_blank");
   if (!w) return alert("Разрешите открытие всплывающего окна для сохранения PDF");
   w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Сервисная книжка — ${state.carModel}</title>
@@ -472,6 +540,7 @@ async function exportServiceBookPdf() {
     <script>window.onload=function(){window.print();};<\/script></body></html>`);
   w.document.close();
 }
+
 async function saveMileage() {
   const db = getDb();
   const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
@@ -506,7 +575,7 @@ async function createAppointment() {
   const { error } = await db.from("appointments").insert({
     client_id: state.clientId, car_id: state.activeCarId || null,
     client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
-    client_phone: state.phone, problem_description: problem
+    client_phone: state.phone, problem_description: problem, status: "Ожидает ответа мастера"
   });
   if (error) return alert("Ошибка: " + error.message);
   document.getElementById("problem-input").value = "";
@@ -574,6 +643,7 @@ async function loadMessages() {
     list.appendChild(div);
   });
 }
+
 async function openSettings() {
   const db = getDb();
   Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
@@ -708,4 +778,3 @@ async function enableIosPush() {
     btn.textContent = "Включить уведомления";
   }
 }
-

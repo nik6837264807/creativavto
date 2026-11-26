@@ -2,7 +2,7 @@ function getDb() {
   if (window._fsClient) return window._fsClient;
   const projectId = "creativavto-f7bee";
   const host = "https://googleapis.com";
-  const baseUrl = `${host}/v1/projects/${projectId}/databases/(default)/documents`;
+  const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 
   const fromFsVal = (obj) => {
     if (!obj || "nullValue" in obj) return null;

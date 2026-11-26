@@ -1,7 +1,7 @@
 function getDb() {
   if (window._fsClient) return window._fsClient;
   const projectId = "creativavto-f7bee";
-  const host = "https://firestore.googleapis.com";
+  const host = "https://googleapis.com";
   const baseUrl = `${host}/v1/projects/${projectId}/databases/(default)/documents`;
 
   const fromFsVal = (obj) => {
@@ -10,7 +10,7 @@ function getDb() {
     if ("integerValue" in obj) return Number(obj.integerValue);
     if ("doubleValue" in obj) return Number(obj.doubleValue);
     if ("stringValue" in obj) return obj.stringValue;
-    if ("arrayValue" in obj) return (obj.arrayValue.values || new Array()).map(fromFsVal);
+    if ("arrayValue" in obj) return (obj.arrayValue.values || []).map(fromFsVal);
     if ("mapValue" in obj) {
       const res = {};
       for (const [k, v] of Object.entries(obj.mapValue.fields || {})) res[k] = fromFsVal(v);
@@ -41,7 +41,7 @@ function getDb() {
 
   window._fsClient = {
     from(table) {
-      let filters = new Array(), method = "GET", payload = null, isSingle = false;
+      let filters = [], method = "GET", payload = null, isSingle = false;
       const b = {
         select() { return b; },
         eq(col, val) { filters.push({ col, val }); return b; },
@@ -61,9 +61,9 @@ function getDb() {
               }
               const r = await fetch(`${baseUrl}/${table}?pageSize=500`);
               const json = await r.json();
-              let rows = (json.documents || new Array()).map(parseDoc);
+              let rows = (json.documents || []).map(parseDoc);
               for (const f of filters) rows = rows.filter((row) => String(row[f.col]) === String(f.val));
-              return resolve({ data: isSingle ? (rows.at(0) || null) : rows, error: null });
+              return resolve({ data: isSingle ? (rows[0] || null) : rows, error: null });
             }
             if (method === "POST") {
               const fields = {};
@@ -73,15 +73,15 @@ function getDb() {
               return resolve({ data: parseDoc(doc), error: r.ok ? null : new Error(doc.error?.message || "Insert error") });
             }
             if (method === "PATCH") {
-              let targets = idFilter ? Array.of(String(idFilter.val)) : new Array();
+              let targets = idFilter ? [String(idFilter.val)] : [];
               if (!idFilter && filters.length) {
                 const rGet = await fetch(`${baseUrl}/${table}?pageSize=500`);
                 const jGet = await rGet.json();
-                let rows = (jGet.documents || new Array()).map(parseDoc);
+                let rows = (jGet.documents || []).map(parseDoc);
                 for (const f of filters) rows = rows.filter((row) => String(row[f.col]) === String(f.val));
                 targets = rows.map((row) => row.id);
               }
-              const fields = {}, mask = new Array();
+              const fields = {}, mask = [];
               for (const [k, v] of Object.entries(payload)) { fields[k] = toFsVal(v); mask.push(`updateMask.fieldPaths=${encodeURIComponent(k)}`); }
               let lastDoc = null;
               for (const tid of targets) {
@@ -100,11 +100,11 @@ function getDb() {
       };
       return b;
     },
-        functions: {
+    functions: {
       async invoke(fnName, { body }) {
         try {
-          const workerHost = "https://" + "creativavto-api.nik-chugaev68.workers.dev";
-          const r = await fetch(`${workerHost}/${fnName}`, {
+          const workerUrl = `https://workers.dev{fnName}`;
+          const r = await fetch(workerUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
@@ -117,11 +117,10 @@ function getDb() {
   };
   return window._fsClient;
 }
-
 var isLoginMode = false;
 var showArchive = false;
 var selectedPlanId = "plan_6m";
-var cachedPlans = new Array();
+var cachedPlans = [];
 var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
 if ("serviceWorker" in navigator) {
@@ -139,6 +138,7 @@ function saveSession(data) {
   localStorage.setItem("creativavto_session", JSON.stringify(state));
   updateHeaderCar();
 }
+
 function updateHeaderCar() {
   if (!state) return;
   const plate = state.carPlate ? ` (${state.carPlate})` : "";
@@ -173,7 +173,7 @@ async function handleAuth() {
         return;
       }
       const { data: cars } = await db.from("cars").select("*").eq("client_id", found.id);
-      const firstCar = Array.isArray(cars) && cars.length > 0 ? cars.at(0) : null;
+      const firstCar = Array.isArray(cars) && cars.length > 0 ? cars[0] : null;
       saveSession({
         clientId: found.id, name: found.name, phone: found.phone,
         activeCarId: firstCar ? firstCar.id : "",
@@ -188,7 +188,6 @@ async function handleAuth() {
       const carPlate = document.getElementById("auth-plate").value.trim();
       if (!name || !carModel || !phone || !password) {
         alert("Заполните обязательные поля");
-
         btn.disabled = false;
         return;
       }
@@ -215,12 +214,12 @@ async function handleAuth() {
 }
 
 function switchTab(idx) {
-  const tabs = Array.of(0, 1, 2, 3);
+  const tabs =;
   const navItems = document.querySelectorAll(".nav-item");
   tabs.forEach((i) => {
     const el = document.getElementById(`tab-${i}`);
     if (el) el.classList.toggle("hidden", i !== idx);
-    if (navItems.item(i)) navItems.item(i).classList.toggle("active", i === idx);
+    if (navItems[i]) navItems[i].classList.toggle("active", i === idx);
   });
   document.getElementById("tab-settings")?.classList.add("hidden");
   document.getElementById("bottom-nav")?.classList.remove("hidden");
@@ -269,13 +268,17 @@ async function refreshSubscriptionStatus() {
   }
   applySubscriptionUi();
 }
-
 async function loadSubscriptionPlans() {
   const db = getDb();
   const { data: plans } = await db.from("subscription_plans").select("*").eq("is_active", true);
-  cachedPlans = Array.isArray(plans) ? plans.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)) : new Array();
+  const list = Array.isArray(plans) && plans.length > 0 ? plans : [
+    { id: "plan_3m", title: "Пакет 3 месяца", months: 3, price_rub: 299, badge: "", is_active: true, sort_order: 1 },
+    { id: "plan_6m", title: "Пакет 6 месяцев", months: 6, price_rub: 499, badge: "Выгодно", is_active: true, sort_order: 2 },
+    { id: "plan_12m", title: "Пакет 12 месяцев", months: 12, price_rub: 899, badge: "-30%", is_active: true, sort_order: 3 }
+  ];
+  cachedPlans = list.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   if (cachedPlans.length > 0 && !cachedPlans.some((p) => p.id === selectedPlanId)) {
-    selectedPlanId = cachedPlans.at(0).id;
+    selectedPlanId = cachedPlans[0].id;
   }
   renderPlansList();
 }
@@ -288,8 +291,6 @@ function renderPlansList() {
     const picked = p.id === selectedPlanId;
     const div = document.createElement("div");
     div.className = "card";
-
-
     div.style.cssText = `cursor:pointer; margin-bottom:8px; border:2px solid ${picked ? "var(--primary)" : "var(--border)"}; background:${picked ? "#eff6ff" : "#fff"};`;
     div.innerHTML = `
       <div class="row-between">
@@ -314,9 +315,8 @@ async function startSubscriptionPayment() {
   btn.textContent = "Переход к оплате...";
   try {
     const db = getDb();
-    const returnUrl = Array.of("https:/", "nik6837264807.github.io", "creativavto", "").join("/");
     const { data, error } = await db.functions.invoke("create-yookassa-payment", {
-      body: { client_id: state.clientId, plan_id: selectedPlanId, return_url: returnUrl }
+      body: { client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://github.io" }
     });
     if (error) throw error;
     if (data?.confirmation_url) {
@@ -337,6 +337,7 @@ function openSubscriptionScreen() {
   document.getElementById("ai-locked-area")?.classList.remove("hidden");
   loadSubscriptionPlans();
 }
+
 function openAiChat() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
   document.getElementById("diagnost-home").classList.add("hidden");
@@ -402,7 +403,7 @@ async function handleDashboardPhoto(event) {
     return applySubscriptionUi();
   }
   const db = getDb();
-  const file = event.target.files?.item(0);
+  const file = event.target.files?.[0];
   if (!file) return;
   openAiChat();
   document.getElementById("ai-question").value = `Фото приборной панели (${state.carModel}): расшифровка горящих значков`;
@@ -431,7 +432,6 @@ function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-question").value;
   switchTab(2);
 }
-
 async function openGarageModal() {
   const db = getDb();
   document.getElementById("garage-modal").classList.remove("hidden");
@@ -484,7 +484,6 @@ async function addCarToGarage() {
 async function transferCar(carId, carModel) {
   const db = getDb();
   const targetPhone = prompt(`Передача авто «${carModel}».\nВведите телефон нового владельца:`);
-
   if (!targetPhone) return;
   const { data: newOwner } = await db.from("clients").select("*").eq("phone", targetPhone.trim()).maybeSingle();
   if (!newOwner) return alert("Пользователь с таким номером не найден!");
@@ -543,7 +542,6 @@ async function exportServiceBookPdf() {
     <script>window.onload=function(){window.print();};<\/script></body></html>`);
   w.document.close();
 }
-
 async function saveMileage() {
   const db = getDb();
   const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
@@ -646,7 +644,6 @@ async function loadMessages() {
     list.appendChild(div);
   });
 }
-
 async function openSettings() {
   const db = getDb();
   Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
@@ -704,7 +701,7 @@ function getAppLinks() {
 
 function openShareModal() {
   const { androidUrl, iphoneUrl } = getAppLinks();
-  const qrBase = Array.of("https://qrserver.com", "v1", "create-qr-code", "?size=240x240&data=").join("/");
+  const qrBase = Array.of("https:/", "://qrserver.com", "v1", "create-qr-code", "?size=240x240&data=").join("/");
   document.getElementById("qr-android-img").src = qrBase + encodeURIComponent(androidUrl);
   document.getElementById("qr-iphone-img").src = qrBase + encodeURIComponent(iphoneUrl);
   document.getElementById("share-modal").classList.remove("hidden");

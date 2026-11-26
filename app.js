@@ -1,7 +1,6 @@
 function getDb() {
   if (window._fsClient) return window._fsClient;
   const projectId = "creativavto-f7bee";
-  const host = "https://googleapis.com";
   const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 
   const fromFsVal = (obj) => {
@@ -103,8 +102,9 @@ function getDb() {
     functions: {
       async invoke(fnName, { body }) {
         try {
-          const workerUrl = `https://workers.dev{fnName}`;
-          const r = await fetch(workerUrl, {
+          // Если в index.html задан window.CLOUD_FUNCTIONS_BASE, используем его, иначе заглушка
+          const base = window.CLOUD_FUNCTIONS_BASE || "https://functions.yandexcloud.net/ВАШ_ID_ФУНКЦИИ";
+          const r = await fetch(`${base}/${fnName}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
@@ -117,6 +117,7 @@ function getDb() {
   };
   return window._fsClient;
 }
+
 var isLoginMode = false;
 var showArchive = false;
 var selectedPlanId = "plan_6m";
@@ -214,7 +215,7 @@ async function handleAuth() {
 }
 
 function switchTab(idx) {
-  const tabs =;
+  const tabs = [0, 1, 2, 3]; // ИСПРАВЛЕНО: добавлен массив
   const navItems = document.querySelectorAll(".nav-item");
   tabs.forEach((i) => {
     const el = document.getElementById(`tab-${i}`);
@@ -268,6 +269,7 @@ async function refreshSubscriptionStatus() {
   }
   applySubscriptionUi();
 }
+
 async function loadSubscriptionPlans() {
   const db = getDb();
   const { data: plans } = await db.from("subscription_plans").select("*").eq("is_active", true);
@@ -316,7 +318,7 @@ async function startSubscriptionPayment() {
   try {
     const db = getDb();
     const { data, error } = await db.functions.invoke("create-yookassa-payment", {
-      body: { client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://github.io" }
+      body: { client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://nik6837264807.github.io/creativavto/" }
     });
     if (error) throw error;
     if (data?.confirmation_url) {
@@ -325,7 +327,7 @@ async function startSubscriptionPayment() {
     }
     throw new Error("Не получена ссылка на оплату");
   } catch (e) {
-    alert(e.message);
+    alert("Ошибка оплаты: " + e.message);
   }
   btn.disabled = false;
   btn.textContent = "💳 Оплатить подписку (ЮKassa)";
@@ -432,6 +434,7 @@ function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-question").value;
   switchTab(2);
 }
+
 async function openGarageModal() {
   const db = getDb();
   document.getElementById("garage-modal").classList.remove("hidden");
@@ -491,9 +494,7 @@ async function transferCar(carId, carModel) {
   await db.from("service_records").update({ client_id: newOwner.id }).eq("car_id", carId);
   alert(`Авто передано ${newOwner.name}!`);
   openGarageModal();
-}
-
-async function loadServiceBook() {
+}async function loadServiceBook() {
   const db = getDb();
   if (state.activeCarId) {
     const { data: car } = await db.from("cars").select("current_mileage").eq("id", state.activeCarId).maybeSingle();
@@ -542,6 +543,7 @@ async function exportServiceBookPdf() {
     <script>window.onload=function(){window.print();};<\/script></body></html>`);
   w.document.close();
 }
+
 async function saveMileage() {
   const db = getDb();
   const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
@@ -644,6 +646,7 @@ async function loadMessages() {
     list.appendChild(div);
   });
 }
+
 async function openSettings() {
   const db = getDb();
   Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
@@ -672,9 +675,7 @@ async function saveProfileSettings() {
   saveSession({ name, carModel, carPlate });
   alert("Профиль обновлён!");
   closeSettings();
-}
-
-function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
+}function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
 
 async function initApp() {
   const db = getDb();
@@ -771,7 +772,7 @@ async function enableIosPush() {
     await db.from("clients").update({ push_subscription: sub.toJSON() }).eq("id", state.clientId);
     btn.textContent = "✅ Уведомления включены";
     btn.disabled = false;
-    alert("Подписка iPhone обновлена на новый Service Worker!");
+    alert("Подписка обновлена!");
   } catch (e) {
     alert("Ошибка подписки: " + e.message);
     btn.disabled = false;

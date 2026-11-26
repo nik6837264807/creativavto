@@ -100,12 +100,15 @@ function getDb() {
       };
       return b;
     },
-    functions: {
+        functions: {
       async invoke(fnName, { body }) {
         try {
-          const fallbackHost = Array.of("https:/", "afrlwjzssgmlwxmzlmiq.supabase.co").join("/");
-          const url = window.CLOUD_FUNCTIONS_BASE ? `${window.CLOUD_FUNCTIONS_BASE}/${fnName}` : `${fallbackHost}/functions/v1/${fnName}`;
-          const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const workerHost = "https://" + "creativavto-api.nik-chugaev68.workers.dev";
+          const r = await fetch(`${workerHost}/${fnName}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
           const data = await r.json();
           return r.ok ? { data, error: null } : { data: null, error: new Error(data?.error || r.statusText) };
         } catch (error) { return { data: null, error }; }

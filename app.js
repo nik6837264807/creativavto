@@ -701,7 +701,7 @@ function getAppLinks() {
 
 function openShareModal() {
   const { androidUrl, iphoneUrl } = getAppLinks();
-  const qrBase = Array.of("https:/", "://qrserver.com", "v1", "create-qr-code", "?size=240x240&data=").join("/");
+  const qrBase = Array.of("https://qrserver.com", "v1", "create-qr-code", "?size=240x240&data=").join("/");
   document.getElementById("qr-android-img").src = qrBase + encodeURIComponent(androidUrl);
   document.getElementById("qr-iphone-img").src = qrBase + encodeURIComponent(iphoneUrl);
   document.getElementById("share-modal").classList.remove("hidden");

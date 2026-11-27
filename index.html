@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="CreativAvto" />
   <link rel="apple-touch-icon" href="./icon-180.png" />
@@ -248,9 +249,9 @@
     // Делаем доступными глобально для app.js
     window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc };
     
-    // Запускаем app.js после инициализации
+    // Запускаем app.js после инициализации (ВЕРСИЯ ОБНОВЛЕНА ДО 25)
     const script = document.createElement('script');
-    script.src = './app.js?v=24';
+    script.src = './app.js?v=25';
     document.body.appendChild(script);
   </script>
 </body>

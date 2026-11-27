@@ -263,14 +263,16 @@
   </footer>
 
   <!-- ПОДКЛЮЧАЕМ FIREBASE SDK -->
-    <script type="module">
-    import { initializeApp } from "https://gstatic.com";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://gstatic.com";
-    import { getFirestore, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc } from "https://gstatic.com";
+  <script type="module">
+    // 1. ПРАВИЛЬНЫЕ ИМПОРТЫ FIREBASE
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    import { getFirestore, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
+    // 2. ПРАВИЛЬНЫЙ КОНФИГ
     const firebaseConfig = {
       apiKey: "AIzaSyB5iDK0cp_w1CbtYt1Iv6IQcZLS-Lmn05U",
-      authDomain: "://firebaseapp.com",
+      authDomain: "creativavto-f7bee.firebaseapp.com", // Исправлено!
       projectId: "creativavto-f7bee",
       storageBucket: "creativavto-f7bee.firebasestorage.app",
       messagingSenderId: "682860620946",
@@ -281,10 +283,12 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
+    // 3. ПЕРЕДАЕМ ВСЕ НУЖНЫЕ ФУНКЦИИ В WINDOW._FB
     window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc };
     
+    // 4. ЗАГРУЖАЕМ APP.JS
     const script = document.createElement('script');
-    script.src = './app.js?v=27';
+    script.src = './app.js?v=28'; // Обновил версию для сброса кэша
     document.body.appendChild(script);
   </script>
 </body>

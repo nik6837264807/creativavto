@@ -1,19 +1,11 @@
-// ==========================================
-// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И СОСТОЯНИЕ
-// ==========================================
+// Глобальные переменные и состояние
 var isLoginMode = false;
 var showArchive = false;
 var selectedPlanId = "plan_6m";
 var cachedPlans = [];
 var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
-// Переменные для голосового помощника
-var recognition = null;
-var isVoiceRecording = false;
-var mediaRecorder = null;
-var audioChunks = [];
-
-// Инициализация Service Worker (обновлено под новую версию)
+// Инициализация Service Worker
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
@@ -52,13 +44,9 @@ function toggleAuthMode() {
   document.getElementById("auth-toggle-btn").textContent = isLoginMode ? "Впервые у нас? Зарегистрироваться" : "Уже есть аккаунт / сменил телефон? Войти";
 }
 
+// Убеждаемся, что пользователь анонимно авторизован в Firebase
 async function ensureAuth() {
-  return new Promise((resolve, reject) => {
-    // Защита от случая, когда Firebase SDK не загрузился
-    if (!window._fb || !window._fb.auth) {
-      return reject(new Error("Firebase SDK не загружен. Проверьте интернет и обновите страницу (Ctrl+F5)."));
-    }
-    
+  return new Promise((resolve) => {
     window._fb.onAuthStateChanged(window._fb.auth, async (user) => {
       if (user) resolve(user);
       else {
@@ -67,7 +55,7 @@ async function ensureAuth() {
           resolve(cred.user);
         } catch (e) { 
           console.error("Auth error", e); 
-          reject(e);
+          alert("Ошибка авторизации: " + e.message);
         }
       }
     });
@@ -85,6 +73,7 @@ async function handleAuth() {
     const db = window._fb.db;
 
     if (isLoginMode) {
+      // Вход: ищем по телефону и паролю
       const q = window._fb.query(
         window._fb.collection(db, "clients"), 
         window._fb.where("phone", "==", phone), 
@@ -102,6 +91,7 @@ async function handleAuth() {
       const found = foundDoc.data();
       const foundId = foundDoc.id;
 
+      // Загружаем машины
       const carsQ = window._fb.query(window._fb.collection(db, "cars"), window._fb.where("client_id", "==", foundId));
       const carsSnap = await window._fb.getDocs(carsQ);
       const cars = carsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -117,6 +107,7 @@ async function handleAuth() {
       initApp();
 
     } else {
+      // Регистрация: создаем документ с ID = uid
       const name = document.getElementById("auth-name").value.trim();
       const carModel = document.getElementById("auth-car").value.trim();
       const carPlate = document.getElementById("auth-plate").value.trim();
@@ -127,7 +118,7 @@ async function handleAuth() {
         return;
       }
 
-      const uid = user.uid;
+      const uid = user.uid; // ID документа привязан к auth.uid
       
       await window._fb.setDoc(window._fb.doc(db, "clients", uid), {
         name, car_model: carModel, car_plate: carPlate, phone, password, 
@@ -146,7 +137,7 @@ async function handleAuth() {
       initApp();
     }
   } catch (e) {
-    alert("Ошибка: " + e.message);
+    alert("Ошибка сети: " + e.message);
   }
   btn.disabled = false;
 }
@@ -262,15 +253,10 @@ async function startSubscriptionPayment() {
   btn.disabled = true;
   btn.textContent = "Переход к оплате...";
   try {
-    // Обрати внимание: адрес пока заглушка (workers.dev), нужно будет заменить на реальный URL воркера ЮKassa
-    const r = await fetch("https://workers.dev", {
+    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: state.clientId,
-        plan_id: selectedPlanId,
-        return_url: "https://github.io"
-      })
+      body: JSON.stringify({ client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://nik6837264807.github.io/creativavto/" })
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Ошибка оплаты");
@@ -294,191 +280,67 @@ function openSubscriptionScreen() {
 }
 
 // ==========================================
-// 3. ИИ-АВТОМЕХАНИК (НОВЫЙ ДИЗАЙН)
+// 3. ИИ-АВТОМЕХАНИК
 // ==========================================
 
-function openVoiceAssistant() {
+function openAiChat() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
-  document.getElementById("voice-selector-modal").classList.remove("hidden");
-}
-
-function closeVoiceSelector() {
-  document.getElementById("voice-selector-modal").classList.add("hidden");
-}
-
-function openTextInput() {
-  closeVoiceSelector();
   document.getElementById("diagnost-home").classList.add("hidden");
   document.getElementById("diagnost-chat").classList.remove("hidden");
-  document.getElementById("text-input-modal").classList.remove("hidden");
-}
-
-function closeTextInput() {
-  document.getElementById("text-input-modal").classList.add("hidden");
 }
 
 function closeAiChat() {
   document.getElementById("diagnost-chat").classList.add("hidden");
   document.getElementById("diagnost-home").classList.remove("hidden");
   document.getElementById("ai-answer-box").classList.add("hidden");
-  document.getElementById("ai-chat-history").innerHTML = "";
 }
 
-// Запуск голосового ввода
-function startVoiceRecognition() {
-  closeVoiceSelector();
-  document.getElementById("diagnost-home").classList.add("hidden");
-  document.getElementById("diagnost-chat").classList.remove("hidden");
-  
-  const chatHistory = document.getElementById("ai-chat-history");
-  chatHistory.innerHTML = "";
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Ваш браузер не поддерживает голосовой ввод. Пожалуйста, используйте текстовый ввод.");
-    openTextInput();
-    return;
-  }
-
-  recognition = new SpeechRecognition();
-  recognition.lang = 'ru-RU';
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-
-  recognition.onstart = function() {
-    isVoiceRecording = true;
-    chatHistory.innerHTML = `<div class="chat-bubble user">🎤 Слушаю вас...</div>`;
-  };
-
-  recognition.onresult = function(event) {
-    const speechResult = event.results[0][0].transcript;
-    chatHistory.innerHTML = `<div class="chat-bubble user">Вы: ${speechResult}</div>`;
-    isVoiceRecording = false;
-    
-    askAiMechanic(speechResult, true);
-  };
-
-  recognition.onerror = function(event) {
-    isVoiceRecording = false;
-    chatHistory.innerHTML += `<div style="color:red;">Ошибка распознавания: ${event.error}</div>`;
-  };
-
-  recognition.onend = function() {
-    if (isVoiceRecording) {
-      isVoiceRecording = false;
-      chatHistory.innerHTML += `<div style="color:gray;">Ничего не услышал. Попробуйте еще раз.</div>`;
-    }
-  };
-
-  recognition.start();
-}
-
-// Озвучка ответа
-function speakText(text) {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ru-RU';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
-  }
-}
-
-// Универсальная функция для ИИ
-async function askAiMechanic(text, isVoice = false) {
+async function askAiMechanic() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
-  
-  let prompt = text;
-  if (!prompt) {
-    prompt = document.getElementById("ai-question").value.trim();
-  }
+  const prompt = document.getElementById("ai-question").value.trim();
   if (!prompt) return;
-
   const btn = document.getElementById("ai-ask-btn");
-  const chatHistory = document.getElementById("ai-chat-history");
-  const answerBox = document.getElementById("ai-answer-box");
-
-  if (btn) { btn.disabled = true; btn.textContent = "Механик анализирует..."; }
-  
-  if (!isVoice) {
-    chatHistory.innerHTML += `<div class="chat-bubble user">Вы: ${prompt}</div>`;
-    closeTextInput();
-  }
-  chatHistory.innerHTML += `<div class="chat-bubble" id="ai-thinking">🤖 Думаю над ответом...</div>`;
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  btn.disabled = true;
+  btn.textContent = "Механик анализирует...";
 
   try {
     const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "text", prompt: prompt, carModel: state.carModel })
+      body: JSON.stringify({ mode: "text", prompt, carModel: state.carModel })
     });
     const data = await r.json();
-    
-    if (document.getElementById("ai-thinking")) document.getElementById("ai-thinking").remove();
-    
     if (!r.ok) throw new Error(data.error || "Ошибка ИИ");
-    
-    chatHistory.innerHTML += `<div class="chat-bubble">🤖 ${data.reply}</div>`;
-    
-    if (isVoice) speakText(data.reply);
-    
-    answerBox.classList.remove("hidden");
-    document.getElementById("ai-answer-text").textContent = prompt;
-
-    chatHistory.scrollTop = chatHistory.scrollHeight;
-    
+    document.getElementById("ai-answer-text").textContent = data.reply;
+    document.getElementById("ai-answer-box").classList.remove("hidden");
   } catch (e) {
-    if (document.getElementById("ai-thinking")) document.getElementById("ai-thinking").remove();
-    chatHistory.innerHTML += `<div style="color:red;">Ошибка: ${e.message}</div>`;
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "Получить консультацию"; }
+    alert("Ошибка ИИ: " + e.message);
   }
+  btn.disabled = false;
+  btn.textContent = "Получить консультацию";
 }
 
-// Заглушка для сканера звука
-async function startSoundScanner() {
-  if (!isSubscriptionActive()) return applySubscriptionUi();
-  
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
-    audioChunks = [];
-
-    recorder.ondataavailable = event => { audioChunks.push(event.data); };
-
-    recorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64Audio = reader.result.split(',')[1];
-        
-        alert("Запись завершена. Отправляем на анализ ИИ...");
-        
-        try {
-          const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: "sound_analysis", audioBase64: base64Audio, carModel: state.carModel })
-          });
-          const data = await r.json();
-          alert("Результат анализа: " + (data.reply || "Не удалось проанализировать"));
-        } catch (e) { alert("Ошибка анализа звука: " + e.message); }
+function resizeImageToBase64(file, maxSide = 1024) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxSide || h > maxSide) {
+          if (w > h) { h = Math.round((h * maxSide) / w); w = maxSide; }
+          else { w = Math.round((w * maxSide) / h); h = maxSide; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
       };
+      img.onerror = reject;
+      img.src = e.target.result;
     };
-
-    recorder.start();
-    alert("Запись звука началась (20 сек). Пожалуйста, заведите двигатель или создайте шум.");
-    
-    setTimeout(() => {
-      recorder.stop();
-      stream.getTracks().forEach(track => track.stop());
-    }, 20000);
-
-  } catch (e) {
-    alert("Ошибка доступа к микрофону: " + e.message);
-  }
+    reader.readAsDataURL(file);
+  });
 }
 
 async function handleDashboardPhoto(event) {
@@ -488,39 +350,33 @@ async function handleDashboardPhoto(event) {
   }
   const file = event.target.files?.[0];
   if (!file) return;
-  document.getElementById("diagnost-home").classList.add("hidden");
-  document.getElementById("diagnost-chat").classList.remove("hidden");
-  const chatHistory = document.getElementById("ai-chat-history");
-  const qText = `Фото приборной панели (${state.carModel}): расшифровка горящих значков`;
-  chatHistory.innerHTML += `<div class="chat-bubble user">📷 ${qText}</div>`;
-  chatHistory.innerHTML += `<div class="chat-bubble" id="ai-thinking">🤖 Распознаю значки...</div>`;
+  openAiChat();
+  document.getElementById("ai-question").value = `Фото приборной панели (${state.carModel}): расшифровка горящих значков`;
+  const btn = document.getElementById("ai-ask-btn");
+  btn.disabled = true;
+  btn.textContent = "Распознаю значки по фото...";
 
   try {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      // Внимание: здесь тоже пока стоит заглушка workers.dev
-      const r = await fetch("https://workers.dev", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "dashboard_vision", imageBase64: e.target.result, prompt: qText, carModel: state.carModel })
-      });
-      const data = await r.json();
-      document.getElementById("ai-thinking")?.remove();
-      if (!r.ok) throw new Error(data.error || "Ошибка анализа фото");
-      chatHistory.innerHTML += `<div class="chat-bubble">🤖 ${data.reply}</div>`;
-      document.getElementById("ai-answer-box").classList.remove("hidden");
-      document.getElementById("ai-answer-text").textContent = qText;
-    };
-    reader.readAsDataURL(file);
-  } catch (err) {
-    document.getElementById("ai-thinking")?.remove();
-    alert("Ошибка фото: " + err.message);
+    const imageBase64 = await resizeImageToBase64(file, 1024);
+    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "dashboard_vision", imageBase64, carModel: state.carModel })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Ошибка распознавания");
+    document.getElementById("ai-answer-text").textContent = data.reply;
+    document.getElementById("ai-answer-box").classList.remove("hidden");
+  } catch (e) {
+    alert("Ошибка распознавания фото: " + e.message);
   }
+  btn.disabled = false;
+  btn.textContent = "Получить консультацию";
   event.target.value = "";
 }
 
 function bookFromAi() {
-  document.getElementById("problem-input").value = document.getElementById("ai-answer-text").textContent;
+  document.getElementById("problem-input").value = document.getElementById("ai-question").value;
   switchTab(2);
 }
 
@@ -708,21 +564,13 @@ async function deleteRecord(id) {
 async function createAppointment() {
   const problem = document.getElementById("problem-input").value.trim();
   if (!problem) return alert("Опишите проблему");
+  
   try {
     await window._fb.addDoc(window._fb.collection(window._fb.db, "appointments"), {
       client_id: state.clientId, car_id: state.activeCarId || null,
       client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
       client_phone: state.phone, problem_description: problem, status: "Ожидает ответа мастера"
     });
-    // Внимание: здесь тоже заглушка workers.dev
-    fetch("https://workers.dev", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event_type: "INSERT",
-        record: { client_name: state.name, car_model: state.carModel, problem_description: problem }
-      })
-    }).catch(() => {});
     document.getElementById("problem-input").value = "";
     alert("Заявка отправлена мастеру!");
     loadAppointments();

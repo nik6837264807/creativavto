@@ -16,11 +16,9 @@
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, sans-serif;
-  /* Убираем стандартный синий контур при фокусе */
   outline: none; 
 }
 
-/* Красивое выделение текста в полях */
 ::selection {
   background: var(--primary);
   color: #FFFFFF;
@@ -30,7 +28,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  padding-bottom: calc(80px + env(safe-area-inset-bottom)); /* Увеличили отступ, чтобы клавиатура не перекрывала контент */
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -58,7 +56,7 @@ h2, h3, h4 { margin: 0 0 8px 0; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 100vh; /* Центрируем по вертикали */
+  min-height: 100vh;
 }
 .auth-logo { width: 76px; height: 76px; border-radius: 18px; margin: 0 auto 12px auto; }
 
@@ -82,7 +80,7 @@ main {
   padding: 16px; 
   max-width: 600px; 
   margin: 0 auto; 
-  min-height: calc(100vh - 140px); /* Чтобы контент не был слишком коротким */
+  min-height: calc(100vh - 140px);
 }
 .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .card-green { background: var(--green-light); }
@@ -94,7 +92,7 @@ input, textarea {
   width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: 12px;
   font-size: 16px; background: #FFF; margin-bottom: 12px; 
   transition: border-color 0.2s;
-  -webkit-appearance: none; /* Убираем стандартные тени на iOS */
+  -webkit-appearance: none;
   appearance: none;
 }
 input:focus, textarea:focus { border-color: var(--primary); }
@@ -117,17 +115,6 @@ textarea { resize: vertical; min-height: 80px; }
 
 .link-primary { color: var(--primary); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .link-green { color: var(--green); font-weight: 700; text-decoration: none; display: inline-block; }
-
-/* --- ИИ-АВТОМЕХАНИК --- */
-.ai-hero { display: flex; flex-direction: column; align-items: center; padding: 10px 0 20px 0; }
-.ai-circle {
-  width: 185px; height: 185px; border-radius: 50%; background: var(--primary); color: #FFF;
-  border: none; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 700; box-shadow: 0 10px 25px rgba(21,101,192,0.35); 
-  cursor: pointer; margin-bottom: 24px; transition: transform 0.1s;
-}
-.ai-circle:active { transform: scale(0.95); }
-.ai-circle-icon { font-size: 46px; margin-bottom: 8px; }
 
 /* --- НИЖНЕЕ МЕНЮ --- */
 nav {
@@ -157,7 +144,7 @@ nav {
   background: #FFF; width: 100%; max-width: 600px; border-radius: 24px 24px 0 0;
   padding: 24px 20px calc(24px + env(safe-area-inset-bottom)); 
   max-height: 88vh; overflow-y: auto;
-  overscroll-behavior: contain; /* Запрещает прокрутку страницы за модалкой */
+  overscroll-behavior: contain;
   animation: slideUp 0.25s ease-out;
 }
 
@@ -180,4 +167,131 @@ nav {
 @keyframes slideUp {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
+}
+
+/* ========================================= */
+/* НОВЫЙ ДИЗАЙН ИИ-АВТОМЕХАНИКА (ПУЛЬСАЦИЯ)  */
+/* ========================================= */
+
+.ai-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 0 20px 0;
+  background: transparent;
+}
+
+.ai-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin-top: 15px;
+  margin-bottom: 30px;
+  color: var(--text);
+}
+
+/* Контейнер для пульсации */
+.pulse-ring-container {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Главный круг */
+.ai-circle-main {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 10px 30px rgba(21,101,192,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  position: relative;
+  transition: transform 0.2s;
+  color: var(--primary);
+}
+.ai-circle-main:active { transform: scale(0.95); }
+
+.ai-circle-icon {
+  font-size: 60px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
+}
+
+/* Анимация волн (как у Siri) */
+.pulse-ring {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  animation: pulsate 3s ease-out infinite;
+  opacity: 0;
+}
+
+.pulse-ring.delay-1 { animation-delay: 1s; }
+.pulse-ring.delay-2 { animation-delay: 2s; }
+
+@keyframes pulsate {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { opacity: 0.6; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+/* Кнопки выбора (Голос/Текст) */
+.btn-circle {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  border: 2px solid var(--primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  cursor: pointer;
+  transition: transform 0.2s;
+  font-weight: 700;
+  font-size: 14px;
+}
+.btn-circle:active { transform: scale(0.95); }
+
+/* История чата */
+.chat-history {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+}
+.chat-bubble {
+  background: var(--primary-light);
+  color: var(--text);
+  padding: 14px;
+  border-radius: 16px;
+  border-bottom-left-radius: 4px;
+  margin-bottom: 10px;
+  font-size: 15px;
+  line-height: 1.4;
+  max-width: 85%;
+  align-self: flex-start;
+}
+.chat-bubble.user {
+  background: #E8F5E9;
+  color: #1B5E20;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 4px;
+  align-self: flex-end;
+}
+
+/* Кнопки действий (под пульсацией) */
+.ai-actions {
+  width: 100%;
+  max-width: 350px;
+  margin-top: 10px;
 }

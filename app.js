@@ -249,6 +249,9 @@ async function startSubscriptionPayment() {
   if (!cb || !cb.checked) {
     return alert("Поставьте галочку согласия с условиями оферты.");
   }
+  if (!state || !state.clientId) {
+    return alert("Ошибка сессии. Пожалуйста, войдите заново.");
+  }
   const btn = document.getElementById("pay-sub-btn");
   btn.disabled = true;
   btn.textContent = "Переход к оплате...";
@@ -297,8 +300,11 @@ function closeAiChat() {
 
 async function askAiMechanic() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
+  
   const prompt = document.getElementById("ai-question").value.trim();
   if (!prompt) return;
+  
   const btn = document.getElementById("ai-ask-btn");
   btn.disabled = true;
   btn.textContent = "Механик анализирует...";
@@ -309,8 +315,19 @@ async function askAiMechanic() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "text", prompt, carModel: state.carModel })
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || "Ошибка ИИ");
+    
+    // Проверяем, что сервер вернул JSON, а не HTML ошибки
+    const textResponse = await r.text();
+    let data;
+    try {
+      data = JSON.parse(textResponse);
+    } catch (parseError) {
+      throw new Error("Сервер вернул некорректный ответ. Попробуйте позже.");
+    }
+
+    if (!r.ok) throw new Error(data.error || "Ошибка ИИ на сервере");
+    if (!data.reply) throw new Error("Сервер не прислал ответ");
+
     document.getElementById("ai-answer-text").textContent = data.reply;
     document.getElementById("ai-answer-box").classList.remove("hidden");
   } catch (e) {
@@ -348,6 +365,11 @@ async function handleDashboardPhoto(event) {
     event.target.value = "";
     return applySubscriptionUi();
   }
+  if (!state || !state.clientId) {
+    event.target.value = "";
+    return alert("Ошибка сессии. Войдите заново.");
+  }
+
   const file = event.target.files?.[0];
   if (!file) return;
   openAiChat();
@@ -363,8 +385,18 @@ async function handleDashboardPhoto(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "dashboard_vision", imageBase64, carModel: state.carModel })
     });
-    const data = await r.json();
+    
+    const textResponse = await r.text();
+    let data;
+    try {
+      data = JSON.parse(textResponse);
+    } catch (parseError) {
+      throw new Error("Сервер вернул некорректный ответ. Попробуйте позже.");
+    }
+
     if (!r.ok) throw new Error(data.error || "Ошибка распознавания");
+    if (!data.reply) throw new Error("Сервер не прислал ответ");
+
     document.getElementById("ai-answer-text").textContent = data.reply;
     document.getElementById("ai-answer-box").classList.remove("hidden");
   } catch (e) {
@@ -385,6 +417,7 @@ function bookFromAi() {
 // ==========================================
 
 async function openGarageModal() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   document.getElementById("garage-modal").classList.remove("hidden");
   try {
     const q = window._fb.query(window._fb.collection(window._fb.db, "cars"), window._fb.where("client_id", "==", state.clientId));
@@ -422,6 +455,7 @@ function selectCar(car) {
 }
 
 async function addCarToGarage() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const model = document.getElementById("new-car-model").value.trim();
   const plate = document.getElementById("new-car-plate").value.trim();
   if (!model) return;
@@ -437,6 +471,7 @@ async function addCarToGarage() {
 }
 
 async function transferCar(carId, carModel) {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const targetPhone = prompt(`Передача авто «${carModel}».\nВведите телефон нового владельца:`);
   if (!targetPhone) return;
   
@@ -463,6 +498,7 @@ async function transferCar(carId, carModel) {
 // ==========================================
 
 async function loadServiceBook() {
+  if (!state || !state.clientId) return;
   const list = document.getElementById("records-list");
   list.innerHTML = "<div style='color:gray;'>Загрузка...</div>";
   
@@ -499,6 +535,7 @@ async function loadServiceBook() {
 }
 
 async function exportServiceBookPdf() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   try {
     let q;
     if (state.activeCarId) {
@@ -527,6 +564,7 @@ async function exportServiceBookPdf() {
 }
 
 async function saveMileage() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
   try {
     if (state.activeCarId) await window._fb.updateDoc(window._fb.doc(window._fb.db, "cars", state.activeCarId), { current_mileage: m });
@@ -536,6 +574,7 @@ async function saveMileage() {
 }
 
 async function addPersonalNote() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const text = prompt("Что сделали по автомобилю?");
   if (!text) return;
   const mileage = parseInt(document.getElementById("mileage-input").value || "0", 10);
@@ -562,6 +601,7 @@ async function deleteRecord(id) {
 // ==========================================
 
 async function createAppointment() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const problem = document.getElementById("problem-input").value.trim();
   if (!problem) return alert("Опишите проблему");
   
@@ -585,6 +625,7 @@ function toggleArchive(arch) {
 }
 
 async function loadAppointments() {
+  if (!state || !state.clientId) return;
   const list = document.getElementById("appointments-list");
   list.innerHTML = "<div style='color:gray;'>Загрузка...</div>";
   
@@ -637,6 +678,7 @@ function openMap() {
 // ==========================================
 
 async function loadMessages() {
+  if (!state || !state.clientId) return;
   const list = document.getElementById("messages-list");
   list.innerHTML = "<div style='color:gray;'>Загрузка...</div>";
   
@@ -663,6 +705,7 @@ async function loadMessages() {
 // ==========================================
 
 async function openSettings() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
   document.getElementById("bottom-nav").classList.add("hidden");
   document.getElementById("tab-settings").classList.remove("hidden");
@@ -683,6 +726,7 @@ async function openSettings() {
 function closeSettings() { switchTab(0); }
 
 async function saveProfileSettings() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const name = document.getElementById("set-name").value.trim();
   const carModel = document.getElementById("set-car").value.trim();
   const carPlate = document.getElementById("set-plate").value.trim();
@@ -780,6 +824,7 @@ function syncPushButtonState() {
 }
 
 async function enableIosPush() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
   const btn = document.getElementById("push-enable-btn");
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
     return alert("На iPhone сначала добавьте сайт на экран «Домой», затем откройте иконку с рабочего стола.");

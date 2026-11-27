@@ -263,14 +263,14 @@
   </footer>
 
   <!-- ПОДКЛЮЧАЕМ FIREBASE SDK -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    <script type="module">
+    import { initializeApp } from "https://gstatic.com";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://gstatic.com";
+    import { getFirestore, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc } from "https://gstatic.com";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB5iDK0cp_w1CbtYt1Iv6IQcZLS-Lmn05U",
-      authDomain: "creativavto-f7bee.firebaseapp.com",
+      authDomain: "://firebaseapp.com",
       projectId: "creativavto-f7bee",
       storageBucket: "creativavto-f7bee.firebasestorage.app",
       messagingSenderId: "682860620946",
@@ -281,11 +281,10 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc };
+    window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc };
     
-    // Запускаем app.js (версия v=25)
     const script = document.createElement('script');
-    script.src = './app.js?v=25';
+    script.src = './app.js?v=27';
     document.body.appendChild(script);
   </script>
 </body>

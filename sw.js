@@ -1,4 +1,4 @@
-const CACHE_NAME = "creativavto-pwa-v22";
+const CACHE_NAME = "creativavto-pwa-v25";
 const ASSETS = [
   "./",
   "./index.html",

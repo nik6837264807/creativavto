@@ -1,4 +1,5 @@
 function getDb() {
+  window.CLOUD_FUNCTIONS_BASE = "https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v";
   if (window._fsClient) return window._fsClient;
   const projectId = "creativavto-f7bee";
   const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;

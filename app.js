@@ -1,4 +1,6 @@
-// Глобальные переменные и состояние
+// ==========================================
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И СОСТОЯНИЕ
+// ==========================================
 var isLoginMode = false;
 var showArchive = false;
 var selectedPlanId = "plan_6m";
@@ -11,7 +13,7 @@ var isVoiceRecording = false;
 var mediaRecorder = null;
 var audioChunks = [];
 
-// Инициализация Service Worker
+// Инициализация Service Worker (обновлено под новую версию)
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
@@ -51,7 +53,12 @@ function toggleAuthMode() {
 }
 
 async function ensureAuth() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // Защита от случая, когда Firebase SDK не загрузился
+    if (!window._fb || !window._fb.auth) {
+      return reject(new Error("Firebase SDK не загружен. Проверьте интернет и обновите страницу (Ctrl+F5)."));
+    }
+    
     window._fb.onAuthStateChanged(window._fb.auth, async (user) => {
       if (user) resolve(user);
       else {
@@ -60,7 +67,7 @@ async function ensureAuth() {
           resolve(cred.user);
         } catch (e) { 
           console.error("Auth error", e); 
-          alert("Ошибка авторизации: " + e.message);
+          reject(e);
         }
       }
     });
@@ -139,7 +146,7 @@ async function handleAuth() {
       initApp();
     }
   } catch (e) {
-    alert("Ошибка сети: " + e.message);
+    alert("Ошибка: " + e.message);
   }
   btn.disabled = false;
 }
@@ -255,6 +262,7 @@ async function startSubscriptionPayment() {
   btn.disabled = true;
   btn.textContent = "Переход к оплате...";
   try {
+    // Обрати внимание: адрес пока заглушка (workers.dev), нужно будет заменить на реальный URL воркера ЮKassa
     const r = await fetch("https://workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -472,6 +480,7 @@ async function startSoundScanner() {
     alert("Ошибка доступа к микрофону: " + e.message);
   }
 }
+
 async function handleDashboardPhoto(event) {
   if (!isSubscriptionActive()) {
     event.target.value = "";
@@ -489,6 +498,7 @@ async function handleDashboardPhoto(event) {
   try {
     const reader = new FileReader();
     reader.onload = async (e) => {
+      // Внимание: здесь тоже пока стоит заглушка workers.dev
       const r = await fetch("https://workers.dev", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -508,6 +518,7 @@ async function handleDashboardPhoto(event) {
   }
   event.target.value = "";
 }
+
 function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-answer-text").textContent;
   switchTab(2);
@@ -703,6 +714,7 @@ async function createAppointment() {
       client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
       client_phone: state.phone, problem_description: problem, status: "Ожидает ответа мастера"
     });
+    // Внимание: здесь тоже заглушка workers.dev
     fetch("https://workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -28,6 +28,10 @@
     <input id="auth-pass" type="password" placeholder="Кодовое слово (пароль)" />
     <button id="auth-submit-btn" class="btn" onclick="handleAuth()">Создать сервисную книжку</button>
     <button id="auth-toggle-btn" class="btn-link" onclick="toggleAuthMode()">Уже есть аккаунт / сменил телефон? Войти</button>
+
+    <div style="margin-top: 30px; font-size: 12px;">
+      <a href="./offer.html" target="_blank" style="color: var(--muted); text-decoration: underline;">Пользовательское соглашение, тарифы и реквизиты</a>
+    </div>
   </div>
 
   <!-- ОСНОВНОЙ ИНТЕРФЕЙС ПРИЛОЖЕНИЯ -->
@@ -47,7 +51,6 @@
 
       <!-- ВКЛАДКА 0: ДИАГНОСТ -->
       <section id="tab-0">
-        <!-- БЛОК РАЗБЛОКИРОВАННОГО ИИ -->
         <div id="ai-unlocked-area">
           <div id="diagnost-home" class="ai-hero">
             <button class="ai-circle" onclick="openAiChat()">
@@ -74,19 +77,21 @@
           </div>
         </div>
 
-        <!-- БЛОК ОГРАНИЧЕННОГО ДОСТУПА (ВИТРИНА ТАРИФОВ) -->
         <div id="ai-locked-area" class="hidden">
           <div class="card card-blue">
             <h3 style="margin-top:0;">🔒 Доступ к ИИ-Автомеханику ограничен</h3>
-            <p style="font-size:14px; color:var(--muted); margin-bottom:12px;">Срок подписки или триала истёк. Сервисная книжка и запись на СТО работают бесплатно:</p>
-            
+            <p style="font-size:14px; color:var(--muted); margin-bottom:12px;">
+              Срок вашей подписки или пробного периода истёк. Сервисная книжка и запись на СТО работают бесплатно, а для доступа к ИИ-диагностике выберите пакет:
+            </p>
             <div id="plans-list"></div>
-            
+
             <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; margin:12px 0; cursor:pointer;">
               <input id="agree-terms-cb" type="checkbox" style="width:auto; margin-top:3px;" />
-              <span>Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600;">условия пользовательского соглашения</a> и уведомлён(а), что стоимость подписки на будущие периоды может быть увеличена.</span>
+              <span>
+                Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600;">условия пользовательского соглашения</a> и уведомлён(а), что стоимость подписки на будущие периоды может быть увеличена.
+              </span>
             </label>
-            
+
             <button id="pay-sub-btn" class="btn" onclick="startSubscriptionPayment()">💳 Оплатить подписку (ЮKassa)</button>
             <button class="btn btn-tonal mt-10" onclick="refreshSubscriptionStatus()">🔄 Проверить статус оплаты</button>
           </div>
@@ -146,11 +151,19 @@
           <button class="icon-btn" onclick="closeSettings()">←</button>
           <h3>Настройки профиля</h3>
         </div>
+
         <div class="card card-blue mb-12">
           <div style="font-weight:700; margin-bottom:4px;">💎 Подписка на ИИ-Автомеханик</div>
-          <div id="sub-status-text" style="font-size:14px; margin-bottom:10px;">Проверка...</div>
+          <div id="sub-status-text" style="font-size:14px; margin-bottom:10px;">Проверка статуса...</div>
           <button class="btn btn-tonal" onclick="openSubscriptionScreen()">Продлить / выбрать тариф</button>
         </div>
+
+        <div class="card mb-12">
+          <div style="font-weight:700; margin-bottom:8px;">📄 Документы и выгрузка</div>
+          <button class="btn btn-tonal mb-8" onclick="exportServiceBookPdf()">📥 Скачать сервисную книжку в PDF</button>
+          <a href="./offer.html" target="_blank" class="link-primary" style="display:block; text-align:center; font-size:14px; margin-top:6px;">Тарифы, пользовательское соглашение и реквизиты</a>
+        </div>
+
         <div class="card">
           <input id="set-name" type="text" placeholder="Ваше имя" />
           <input id="set-car" type="text" placeholder="Активное авто" />
@@ -207,7 +220,38 @@
     </div>
   </div>
 
-  <!-- Версия скрипта обновлена для сброса кэша -->
-  <script src="./app.js?v=22"></script>
+  <!-- ПОДВАЛ САЙТА -->
+  <footer style="text-align: center; padding: 20px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); margin-top: 40px;">
+    <div style="margin-bottom: 8px;">© CreativAvto Тамбов. Плательщик НПД.</div>
+    <a href="./offer.html" target="_blank" style="color: var(--primary); text-decoration: underline;">Пользовательское соглашение, тарифы и реквизиты</a>
+  </footer>
+
+  <!-- ПОДКЛЮЧАЕМ FIREBASE SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB5iDK0cp_w1CbtYt1Iv6IQcZLS-Lmn05U",
+      authDomain: "creativavto-f7bee.firebaseapp.com",
+      projectId: "creativavto-f7bee",
+      storageBucket: "creativavto-f7bee.firebasestorage.app",
+      messagingSenderId: "682860620946",
+      appId: "1:682860620946:web:88c810d3785b2638a14a4b"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Делаем доступными глобально для app.js
+    window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc };
+    
+    // Запускаем app.js после инициализации
+    const script = document.createElement('script');
+    script.src = './app.js?v=24';
+    document.body.appendChild(script);
+  </script>
 </body>
 </html>

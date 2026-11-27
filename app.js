@@ -1,138 +1,25 @@
-function getDb() {
-  window.CLOUD_FUNCTIONS_BASE = "https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v";
-  if (window._fsClient) return window._fsClient;
-  const projectId = "creativavto-f7bee";
-  const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
-
-  const fromFsVal = (obj) => {
-    if (!obj || "nullValue" in obj) return null;
-    if ("booleanValue" in obj) return obj.booleanValue;
-    if ("integerValue" in obj) return Number(obj.integerValue);
-    if ("doubleValue" in obj) return Number(obj.doubleValue);
-    if ("stringValue" in obj) return obj.stringValue;
-    if ("arrayValue" in obj) return (obj.arrayValue.values || []).map(fromFsVal);
-    if ("mapValue" in obj) {
-      const res = {};
-      for (const [k, v] of Object.entries(obj.mapValue.fields || {})) res[k] = fromFsVal(v);
-      return res;
-    }
-    return null;
-  };
-
-  const toFsVal = (v) => {
-    if (v === null || v === undefined) return { nullValue: null };
-    if (typeof v === "boolean") return { booleanValue: v };
-    if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
-    if (Array.isArray(v)) return { arrayValue: { values: v.map(toFsVal) } };
-    if (typeof v === "object") {
-      const fields = {};
-      for (const [k, val] of Object.entries(v)) fields[k] = toFsVal(val);
-      return { mapValue: { fields } };
-    }
-    return { stringValue: String(v) };
-  };
-
-  const parseDoc = (doc) => {
-    const id = doc.name.split("/").pop();
-    const out = { id };
-    for (const [k, v] of Object.entries(doc.fields || {})) out[k] = fromFsVal(v);
-    return out;
-  };
-
-  window._fsClient = {
-    from(table) {
-      let filters = [], method = "GET", payload = null, isSingle = false;
-      const b = {
-        select() { return b; },
-        eq(col, val) { filters.push({ col, val }); return b; },
-        insert(data) { method = "POST"; payload = data; return b; },
-        update(data) { method = "PATCH"; payload = data; return b; },
-        delete() { method = "DELETE"; return b; },
-        single() { isSingle = true; return b; },
-        maybeSingle() { isSingle = true; return b; },
-        async then(resolve) {
-          try {
-            const idFilter = filters.find((f) => f.col === "id");
-            if (method === "GET") {
-              if (idFilter) {
-                const r = await fetch(`${baseUrl}/${table}/${encodeURIComponent(idFilter.val)}`);
-                if (!r.ok) return resolve({ data: null, error: null });
-                return resolve({ data: parseDoc(await r.json()), error: null });
-              }
-              const r = await fetch(`${baseUrl}/${table}?pageSize=500`);
-              const json = await r.json();
-              let rows = (json.documents || []).map(parseDoc);
-              for (const f of filters) rows = rows.filter((row) => String(row[f.col]) === String(f.val));
-              return resolve({ data: isSingle ? (rows[0] || null) : rows, error: null });
-            }
-            if (method === "POST") {
-              const fields = {};
-              for (const [k, v] of Object.entries(payload)) if (k !== "id") fields[k] = toFsVal(v);
-              const r = await fetch(`${baseUrl}/${table}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
-              const doc = await r.json();
-              return resolve({ data: parseDoc(doc), error: r.ok ? null : new Error(doc.error?.message || "Insert error") });
-            }
-            if (method === "PATCH") {
-              let targets = idFilter ? [String(idFilter.val)] : [];
-              if (!idFilter && filters.length) {
-                const rGet = await fetch(`${baseUrl}/${table}?pageSize=500`);
-                const jGet = await rGet.json();
-                let rows = (jGet.documents || []).map(parseDoc);
-                for (const f of filters) rows = rows.filter((row) => String(row[f.col]) === String(f.val));
-                targets = rows.map((row) => row.id);
-              }
-              const fields = {}, mask = [];
-              for (const [k, v] of Object.entries(payload)) { fields[k] = toFsVal(v); mask.push(`updateMask.fieldPaths=${encodeURIComponent(k)}`); }
-              let lastDoc = null;
-              for (const tid of targets) {
-                const r = await fetch(`${baseUrl}/${table}/${encodeURIComponent(tid)}?${mask.join("&")}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
-                if (r.ok) lastDoc = parseDoc(await r.json());
-              }
-              return resolve({ data: lastDoc, error: null });
-            }
-            if (method === "DELETE" && idFilter) {
-              await fetch(`${baseUrl}/${table}/${encodeURIComponent(idFilter.val)}`, { method: "DELETE" });
-              return resolve({ data: null, error: null });
-            }
-            resolve({ data: null, error: null });
-          } catch (error) { resolve({ data: null, error }); }
-        }
-      };
-      return b;
-    },
-    functions: {
-      async invoke(fnName, { body }) {
-        try {
-          // ИСПРАВЛЕНО: передаем запрос напрямую на URL функции Yandex Cloud
-          const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-          });
-          const data = await r.json();
-          return r.ok ? { data, error: null } : { data: null, error: new Error(data?.error || r.statusText) };
-        } catch (error) { return { data: null, error }; }
-      }
-    }
-  };
-  return window._fsClient;
-}
-
+// Глобальные переменные и состояние
 var isLoginMode = false;
 var showArchive = false;
 var selectedPlanId = "plan_6m";
 var cachedPlans = [];
 var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
+// Инициализация Service Worker
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 
+// Проверка на iOS для баннера установки
 var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 var isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
 if (isIos && !isStandalone) {
   document.getElementById("ios-install-hint")?.classList.remove("hidden");
 }
+
+// ==========================================
+// 1. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ И АВТОРИЗАЦИЯ
+// ==========================================
 
 function saveSession(data) {
   state = { ...(state || {}), ...data };
@@ -157,54 +44,95 @@ function toggleAuthMode() {
   document.getElementById("auth-toggle-btn").textContent = isLoginMode ? "Впервые у нас? Зарегистрироваться" : "Уже есть аккаунт / сменил телефон? Войти";
 }
 
+// Убеждаемся, что пользователь анонимно авторизован в Firebase
+async function ensureAuth() {
+  return new Promise((resolve) => {
+    window._fb.onAuthStateChanged(window._fb.auth, async (user) => {
+      if (user) resolve(user);
+      else {
+        try { 
+          const cred = await window._fb.signInAnonymously(window._fb.auth); 
+          resolve(cred.user);
+        } catch (e) { 
+          console.error("Auth error", e); 
+          alert("Ошибка авторизации: " + e.message);
+        }
+      }
+    });
+  });
+}
+
 async function handleAuth() {
-  const db = getDb();
   const phone = document.getElementById("auth-phone").value.trim();
   const password = document.getElementById("auth-pass").value.trim();
   const btn = document.getElementById("auth-submit-btn");
   btn.disabled = true;
 
   try {
+    const user = await ensureAuth();
+    const db = window._fb.db;
+
     if (isLoginMode) {
-      const { data: found, error } = await db.from("clients").select("*").eq("phone", phone).eq("password", password).maybeSingle();
-      if (error) throw error;
-      if (!found) {
+      // Вход: ищем по телефону и паролю
+      const q = window._fb.query(
+        window._fb.collection(db, "clients"), 
+        window._fb.where("phone", "==", phone), 
+        window._fb.where("password", "==", password)
+      );
+      const snap = await window._fb.getDocs(q);
+      
+      if (snap.empty) {
         alert("Неверный телефон или кодовое слово");
         btn.disabled = false;
         return;
       }
-      const { data: cars } = await db.from("cars").select("*").eq("client_id", found.id);
-      const firstCar = Array.isArray(cars) && cars.length > 0 ? cars[0] : null;
+      
+      const foundDoc = snap.docs[0];
+      const found = foundDoc.data();
+      const foundId = foundDoc.id;
+
+      // Загружаем машины
+      const carsQ = window._fb.query(window._fb.collection(db, "cars"), window._fb.where("client_id", "==", foundId));
+      const carsSnap = await window._fb.getDocs(carsQ);
+      const cars = carsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const firstCar = cars.length > 0 ? cars[0] : null;
+
       saveSession({
-        clientId: found.id, name: found.name, phone: found.phone,
+        clientId: foundId, name: found.name, phone: found.phone,
         activeCarId: firstCar ? firstCar.id : "",
         carModel: firstCar ? firstCar.car_model : found.car_model,
         carPlate: firstCar ? firstCar.car_plate : found.car_plate,
         subscriptionUntil: found.subscription_until || null
       });
       initApp();
+
     } else {
+      // Регистрация: создаем документ с ID = uid
       const name = document.getElementById("auth-name").value.trim();
       const carModel = document.getElementById("auth-car").value.trim();
       const carPlate = document.getElementById("auth-plate").value.trim();
+      
       if (!name || !carModel || !phone || !password) {
         alert("Заполните обязательные поля");
         btn.disabled = false;
         return;
       }
-      const { data: inserted, error } = await db.from("clients")
-        .insert({ name, car_model: carModel, car_plate: carPlate, phone, password, current_mileage: 0, subscription_plan: "free", trial_granted_days: 0 })
-        .select().single();
-      if (error) throw error;
 
-      const { data: insertedCar } = await db.from("cars")
-        .insert({ client_id: inserted.id, car_model: carModel, car_plate: carPlate, current_mileage: 0 })
-        .select().single();
+      const uid = user.uid; // ID документа привязан к auth.uid
+      
+      await window._fb.setDoc(window._fb.doc(db, "clients", uid), {
+        name, car_model: carModel, car_plate: carPlate, phone, password, 
+        current_mileage: 0, subscription_plan: "free", trial_granted_days: 0
+      });
+
+      const carRef = await window._fb.addDoc(window._fb.collection(db, "cars"), {
+        client_id: uid, car_model: carModel, car_plate: carPlate, current_mileage: 0
+      });
 
       saveSession({
-        clientId: inserted.id, name: inserted.name, phone: inserted.phone,
-        activeCarId: insertedCar ? insertedCar.id : "", carModel, carPlate,
-        subscriptionUntil: inserted.subscription_until || null
+        clientId: uid, name: name, phone: phone,
+        activeCarId: carRef.id, carModel, carPlate,
+        subscriptionUntil: null
       });
       initApp();
     }
@@ -213,6 +141,10 @@ async function handleAuth() {
   }
   btn.disabled = false;
 }
+
+// ==========================================
+// 2. НАВИГАЦИЯ И ПОДПИСКА
+// ==========================================
 
 function switchTab(idx) {
   const tabs = [0, 1, 2, 3];
@@ -228,10 +160,7 @@ function switchTab(idx) {
   if (idx === 0) refreshSubscriptionStatus();
   if (idx === 1) loadServiceBook();
   if (idx === 2) loadAppointments();
-  if (idx === 3) {
-    loadMessages();
-    syncPushButtonState();
-  }
+  if (idx === 3) { loadMessages(); syncPushButtonState(); }
 }
 
 function isSubscriptionActive() {
@@ -262,27 +191,35 @@ function applySubscriptionUi() {
 
 async function refreshSubscriptionStatus() {
   if (!state || !state.clientId) return;
-  const db = getDb();
-  const { data: cl } = await db.from("clients").select("subscription_until").eq("id", state.clientId).maybeSingle();
-  if (cl) {
-    saveSession({ subscriptionUntil: cl.subscription_until || null });
-  }
+  try {
+    const docSnap = await window._fb.getDoc(window._fb.doc(window._fb.db, "clients", state.clientId));
+    if (docSnap.exists()) {
+      saveSession({ subscriptionUntil: docSnap.data().subscription_until || null });
+    }
+  } catch (e) { console.error(e); }
   applySubscriptionUi();
 }
 
 async function loadSubscriptionPlans() {
-  const db = getDb();
-  const { data: plans } = await db.from("subscription_plans").select("*").eq("is_active", true);
-  const list = Array.isArray(plans) && plans.length > 0 ? plans : [
-    { id: "plan_3m", title: "Пакет 3 месяца", months: 3, price_rub: 299, badge: "", is_active: true, sort_order: 1 },
-    { id: "plan_6m", title: "Пакет 6 месяцев", months: 6, price_rub: 499, badge: "Выгодно", is_active: true, sort_order: 2 },
-    { id: "plan_12m", title: "Пакет 12 месяцев", months: 12, price_rub: 899, badge: "-30%", is_active: true, sort_order: 3 }
-  ];
-  cachedPlans = list.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  if (cachedPlans.length > 0 && !cachedPlans.some((p) => p.id === selectedPlanId)) {
-    selectedPlanId = cachedPlans[0].id;
-  }
-  renderPlansList();
+  try {
+    const q = window._fb.query(window._fb.collection(window._fb.db, "subscription_plans"), window._fb.where("is_active", "==", true));
+    const snap = await window._fb.getDocs(q);
+    let plans = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    if (plans.length === 0) {
+      plans = [
+        { id: "plan_3m", title: "Пакет 3 месяца", months: 3, price_rub: 285, badge: "Базовый", is_active: true, sort_order: 1 },
+        { id: "plan_6m", title: "Пакет 6 месяцев", months: 6, price_rub: 540, badge: "Выгодно", is_active: true, sort_order: 2 },
+        { id: "plan_12m", title: "Пакет 12 месяцев", months: 12, price_rub: 900, badge: "Максимум", is_active: true, sort_order: 3 }
+      ];
+    }
+
+    cachedPlans = plans.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    if (cachedPlans.length > 0 && !cachedPlans.some((p) => p.id === selectedPlanId)) {
+      selectedPlanId = cachedPlans[0].id;
+    }
+    renderPlansList();
+  } catch (e) { console.error("Ошибка загрузки тарифов", e); }
 }
 
 function renderPlansList() {
@@ -310,24 +247,26 @@ function renderPlansList() {
 async function startSubscriptionPayment() {
   const cb = document.getElementById("agree-terms-cb");
   if (!cb || !cb.checked) {
-    return alert("Пожалуйста, поставьте галочку согласия с условиями оферты и уведомлением о возможном изменении цен.");
+    return alert("Поставьте галочку согласия с условиями оферты.");
   }
   const btn = document.getElementById("pay-sub-btn");
   btn.disabled = true;
   btn.textContent = "Переход к оплате...";
   try {
-    const db = getDb();
-    const { data, error } = await db.functions.invoke("create-yookassa-payment", {
-      body: { client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://nik6837264807.github.io/creativavto/" }
+    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://nik6837264807.github.io/creativavto/" })
     });
-    if (error) throw error;
-    if (data?.confirmation_url) {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Ошибка оплаты");
+    if (data.confirmation_url) {
       window.location.href = data.confirmation_url;
       return;
     }
     throw new Error("Не получена ссылка на оплату");
   } catch (e) {
-    alert("Ошибка оплаты: " + e.message);
+    alert("Ошибка: " + e.message);
   }
   btn.disabled = false;
   btn.textContent = "💳 Оплатить подписку (ЮKassa)";
@@ -339,6 +278,10 @@ function openSubscriptionScreen() {
   document.getElementById("ai-locked-area")?.classList.remove("hidden");
   loadSubscriptionPlans();
 }
+
+// ==========================================
+// 3. ИИ-АВТОМЕХАНИК
+// ==========================================
 
 function openAiChat() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
@@ -354,7 +297,6 @@ function closeAiChat() {
 
 async function askAiMechanic() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
-  const db = getDb();
   const prompt = document.getElementById("ai-question").value.trim();
   if (!prompt) return;
   const btn = document.getElementById("ai-ask-btn");
@@ -362,11 +304,13 @@ async function askAiMechanic() {
   btn.textContent = "Механик анализирует...";
 
   try {
-    const { data, error } = await db.functions.invoke("ai-mechanic", {
-      body: { mode: "text", prompt, carModel: state.carModel }
+    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "text", prompt, carModel: state.carModel })
     });
-    if (error) throw error;
-    if (data && data.error) throw new Error(data.error);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Ошибка ИИ");
     document.getElementById("ai-answer-text").textContent = data.reply;
     document.getElementById("ai-answer-box").classList.remove("hidden");
   } catch (e) {
@@ -404,7 +348,6 @@ async function handleDashboardPhoto(event) {
     event.target.value = "";
     return applySubscriptionUi();
   }
-  const db = getDb();
   const file = event.target.files?.[0];
   if (!file) return;
   openAiChat();
@@ -415,11 +358,13 @@ async function handleDashboardPhoto(event) {
 
   try {
     const imageBase64 = await resizeImageToBase64(file, 1024);
-    const { data, error } = await db.functions.invoke("ai-mechanic", {
-      body: { mode: "dashboard_vision", imageBase64, carModel: state.carModel }
+    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "dashboard_vision", imageBase64, carModel: state.carModel })
     });
-    if (error) throw error;
-    if (data && data.error) throw new Error(data.error);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Ошибка распознавания");
     document.getElementById("ai-answer-text").textContent = data.reply;
     document.getElementById("ai-answer-box").classList.remove("hidden");
   } catch (e) {
@@ -435,30 +380,37 @@ function bookFromAi() {
   switchTab(2);
 }
 
-async function openGarageModal() {
-  const db = getDb();
-  document.getElementById("garage-modal").classList.remove("hidden");
-  const { data: cars } = await db.from("cars").select("*").eq("client_id", state.clientId);
-  const list = document.getElementById("garage-list");
-  list.innerHTML = "";
-  const safeCars = Array.isArray(cars) ? cars : new Array();
+// ==========================================
+// 4. ГАРАЖ И МАШИНЫ
+// ==========================================
 
-  safeCars.forEach((car) => {
-    const active = car.id === state.activeCarId;
-    const div = document.createElement("div");
-    div.className = `card ${active ? "card-blue" : ""}`;
-    div.innerHTML = `
-      <div class="row-between">
-        <div style="flex:1; cursor:pointer;" class="car-pick-area">
-          <b>${car.car_model}</b> ${car.car_plate ? `(${car.car_plate})` : ""}
-          <div style="font-size:12px; color:var(--muted);">Пробег: ${car.current_mileage || 0} км</div>
-        </div>
-        <button class="icon-btn car-transfer-btn" title="Передать авто">📤</button>
-      </div>`;
-    div.querySelector(".car-pick-area").onclick = () => selectCar(car);
-    div.querySelector(".car-transfer-btn").onclick = () => transferCar(car.id, car.car_model);
-    list.appendChild(div);
-  });
+async function openGarageModal() {
+  document.getElementById("garage-modal").classList.remove("hidden");
+  try {
+    const q = window._fb.query(window._fb.collection(window._fb.db, "cars"), window._fb.where("client_id", "==", state.clientId));
+    const snap = await window._fb.getDocs(q);
+    const cars = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    const list = document.getElementById("garage-list");
+    list.innerHTML = "";
+
+    cars.forEach((car) => {
+      const active = car.id === state.activeCarId;
+      const div = document.createElement("div");
+      div.className = `card ${active ? "card-blue" : ""}`;
+      div.innerHTML = `
+        <div class="row-between">
+          <div style="flex:1; cursor:pointer;" class="car-pick-area">
+            <b>${car.car_model}</b> ${car.car_plate ? `(${car.car_plate})` : ""}
+            <div style="font-size:12px; color:var(--muted);">Пробег: ${car.current_mileage || 0} км</div>
+          </div>
+          <button class="icon-btn car-transfer-btn" title="Передать авто">📤</button>
+        </div>`;
+      div.querySelector(".car-pick-area").onclick = () => selectCar(car);
+      div.querySelector(".car-transfer-btn").onclick = () => transferCar(car.id, car.car_model);
+      list.appendChild(div);
+    });
+  } catch (e) { console.error(e); }
 }
 
 function closeGarageModal() { document.getElementById("garage-modal").classList.add("hidden"); }
@@ -470,122 +422,159 @@ function selectCar(car) {
 }
 
 async function addCarToGarage() {
-  const db = getDb();
   const model = document.getElementById("new-car-model").value.trim();
   const plate = document.getElementById("new-car-plate").value.trim();
   if (!model) return;
-  const { data: added } = await db.from("cars")
-    .insert({ client_id: state.clientId, car_model: model, car_plate: plate, current_mileage: 0 })
-    .select().single();
-  if (added) {
+  
+  try {
+    const carRef = await window._fb.addDoc(window._fb.collection(window._fb.db, "cars"), {
+      client_id: state.clientId, car_model: model, car_plate: plate, current_mileage: 0
+    });
     document.getElementById("new-car-model").value = "";
     document.getElementById("new-car-plate").value = "";
-    selectCar(added);
-  }
+    selectCar({ id: carRef.id, car_model: model, car_plate: plate });
+  } catch (e) { alert("Ошибка добавления авто: " + e.message); }
 }
 
 async function transferCar(carId, carModel) {
-  const db = getDb();
   const targetPhone = prompt(`Передача авто «${carModel}».\nВведите телефон нового владельца:`);
   if (!targetPhone) return;
-  const { data: newOwner } = await db.from("clients").select("*").eq("phone", targetPhone.trim()).maybeSingle();
-  if (!newOwner) return alert("Пользователь с таким номером не найден!");
-  await db.from("cars").update({ client_id: newOwner.id }).eq("id", carId);
-  await db.from("service_records").update({ client_id: newOwner.id }).eq("car_id", carId);
-  alert(`Авто передано ${newOwner.name}!`);
-  openGarageModal();
+  
+  try {
+    const q = window._fb.query(window._fb.collection(window._fb.db, "clients"), window._fb.where("phone", "==", targetPhone.trim()));
+    const snap = await window._fb.getDocs(q);
+    if (snap.empty) return alert("Пользователь с таким номером не найден!");
+    
+    const newOwnerId = snap.docs[0].id;
+    await window._fb.updateDoc(window._fb.doc(window._fb.db, "cars", carId), { client_id: newOwnerId });
+    
+    const recQ = window._fb.query(window._fb.collection(window._fb.db, "service_records"), window._fb.where("car_id", "==", carId));
+    const recSnap = await window._fb.getDocs(recQ);
+    for (const doc of recSnap.docs) {
+      await window._fb.updateDoc(doc.ref, { client_id: newOwnerId });
+    }
+    alert(`Авто передано ${snap.docs[0].data().name}!`);
+    openGarageModal();
+  } catch (e) { alert("Ошибка передачи: " + e.message); }
 }
 
+// ==========================================
+// 5. СЕРВИСНАЯ КНИЖКА (ЖУРНАЛ ТО)
+// ==========================================
+
 async function loadServiceBook() {
-  const db = getDb();
-  if (state.activeCarId) {
-    const { data: car } = await db.from("cars").select("current_mileage").eq("id", state.activeCarId).maybeSingle();
-    if (car) document.getElementById("mileage-input").value = car.current_mileage || 0;
-  }
-  const query = state.activeCarId
-    ? db.from("service_records").select("*").eq("car_id", state.activeCarId)
-    : db.from("service_records").select("*").eq("client_id", state.clientId);
-
-  const { data: records } = await query;
   const list = document.getElementById("records-list");
-  list.innerHTML = "";
-  const safeRecords = Array.isArray(records) ? records.slice().reverse() : new Array();
+  list.innerHTML = "<div style='color:gray;'>Загрузка...</div>";
+  
+  try {
+    let q;
+    if (state.activeCarId) {
+      const carSnap = await window._fb.getDoc(window._fb.doc(window._fb.db, "cars", state.activeCarId));
+      if (carSnap.exists()) document.getElementById("mileage-input").value = carSnap.data().current_mileage || 0;
+      
+      q = window._fb.query(window._fb.collection(window._fb.db, "service_records"), window._fb.where("car_id", "==", state.activeCarId));
+    } else {
+      q = window._fb.query(window._fb.collection(window._fb.db, "service_records"), window._fb.where("client_id", "==", state.clientId));
+    }
 
-  safeRecords.forEach((rec) => {
-    const div = document.createElement("div");
-    div.className = `card ${rec.is_official ? "card-green" : ""}`;
-    div.innerHTML = `
-      <div class="row-between">
-        <b style="color:${rec.is_official ? "var(--green)" : "inherit"}">${rec.is_official ? "✅ Запись СТО CreativAvto" : "Личная заметка"}</b>
-        ${!rec.is_official ? `<button class="icon-btn" style="color:var(--red); font-size:15px;" onclick="deleteRecord('${rec.id}')">🗑️</button>` : "🔒"}
-      </div>
-      <div style="font-size:12px; color:var(--muted); margin:4px 0;">Дата: ${rec.record_date} | Пробег: ${rec.mileage} км</div>
-      <div class="pre-text">${rec.description}</div>`;
-    list.appendChild(div);
-  });
+    const snap = await window._fb.getDocs(q);
+    const records = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+
+    list.innerHTML = "";
+    records.forEach((rec) => {
+      const div = document.createElement("div");
+      div.className = `card ${rec.is_official ? "card-green" : ""}`;
+      div.innerHTML = `
+        <div class="row-between">
+          <b style="color:${rec.is_official ? "var(--green)" : "inherit"}">${rec.is_official ? "✅ Запись СТО CreativAvto" : "Личная заметка"}</b>
+          ${!rec.is_official ? `<button class="icon-btn" style="color:var(--red); font-size:15px;" onclick="deleteRecord('${rec.id}')">🗑️</button>` : "🔒"}
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin:4px 0;">Дата: ${rec.record_date} | Пробег: ${rec.mileage} км</div>
+        <div class="pre-text">${rec.description}</div>`;
+      list.appendChild(div);
+    });
+  } catch (e) {
+    list.innerHTML = `<div style="color:red;">Ошибка загрузки: ${e.message}</div>`;
+  }
 }
 
 async function exportServiceBookPdf() {
-  const db = getDb();
-  const query = state.activeCarId
-    ? db.from("service_records").select("*").eq("car_id", state.activeCarId)
-    : db.from("service_records").select("*").eq("client_id", state.clientId);
-  const { data: records } = await query;
-  const rows = Array.isArray(records) ? records : new Array();
-  const tableRows = rows.length
-    ? rows.map((r) => `<tr><td>${r.record_date}</td><td>${r.mileage} км</td><td>${r.is_official ? "СТО CreativAvto" : "Личная запись"}</td><td>${String(r.description || "").replace(/\n/g, "<br>")}</td></tr>`).join("")
-    : `<tr><td colspan="4">Записей в сервисной книжке пока нет</td></tr>`;
-  const w = window.open("", "_blank");
-  if (!w) return alert("Разрешите открытие всплывающего окна для сохранения PDF");
-  w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Сервисная книжка — ${state.carModel}</title>
-    <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px;margin-bottom:4px}p{color:#444;margin-top:0}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:13px}th{background:#f3f4f6}</style>
-    </head><body><h1>Электронная сервисная книжка — CreativAvto Тамбов</h1>
-    <p><b>Владелец:</b> ${state.name} (${state.phone}) | <b>Автомобиль:</b> ${state.carModel} ${state.carPlate || ""}</p>
-    <table><thead><tr><th>Дата</th><th>Пробег</th><th>Источник</th><th>Выполненные работы</th></tr></thead><tbody>${tableRows}</tbody></table>
-    <script>window.onload=function(){window.print();};<\/script></body></html>`);
-  w.document.close();
+  try {
+    let q;
+    if (state.activeCarId) {
+      q = window._fb.query(window._fb.collection(window._fb.db, "service_records"), window._fb.where("car_id", "==", state.activeCarId));
+    } else {
+      q = window._fb.query(window._fb.collection(window._fb.db, "service_records"), window._fb.where("client_id", "==", state.clientId));
+    }
+    const snap = await window._fb.getDocs(q);
+    const records = snap.docs.map(d => d.data());
+    
+    const tableRows = records.length
+      ? records.map((r) => `<tr><td>${r.record_date}</td><td>${r.mileage} км</td><td>${r.is_official ? "СТО CreativAvto" : "Личная запись"}</td><td>${String(r.description || "").replace(/\n/g, "<br>")}</td></tr>`).join("")
+      : `<tr><td colspan="4">Записей в сервисной книжке пока нет</td></tr>`;
+      
+    const w = window.open("", "_blank");
+    if (!w) return alert("Разрешите открытие всплывающего окна для сохранения PDF");
+    
+    w.document.write(`<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Сервисная книжка — ${state.carModel}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px;margin-bottom:4px}p{color:#444;margin-top:0}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:13px}th{background:#f3f4f6}</style>
+      </head><body><h1>Электронная сервисная книжка — CreativAvto Тамбов</h1>
+      <p><b>Владелец:</b> ${state.name} (${state.phone}) | <b>Автомобиль:</b> ${state.carModel} ${state.carPlate || ""}</p>
+      <table><thead><tr><th>Дата</th><th>Пробег</th><th>Источник</th><th>Выполненные работы</th></tr></thead><tbody>${tableRows}</tbody></table>
+      <script>window.onload=function(){window.print();};<\/script></body></html>`);
+    w.document.close();
+  } catch (e) { alert("Ошибка экспорта: " + e.message); }
 }
 
 async function saveMileage() {
-  const db = getDb();
   const m = parseInt(document.getElementById("mileage-input").value || "0", 10);
-  if (state.activeCarId) await db.from("cars").update({ current_mileage: m }).eq("id", state.activeCarId);
-  await db.from("clients").update({ current_mileage: m }).eq("id", state.clientId);
-  alert("Пробег передан мастеру!");
+  try {
+    if (state.activeCarId) await window._fb.updateDoc(window._fb.doc(window._fb.db, "cars", state.activeCarId), { current_mileage: m });
+    await window._fb.updateDoc(window._fb.doc(window._fb.db, "clients", state.clientId), { current_mileage: m });
+    alert("Пробег передан мастеру!");
+  } catch (e) { alert("Ошибка сохранения пробега: " + e.message); }
 }
 
 async function addPersonalNote() {
-  const db = getDb();
   const text = prompt("Что сделали по автомобилю?");
   if (!text) return;
   const mileage = parseInt(document.getElementById("mileage-input").value || "0", 10);
   const today = new Date().toISOString().split("T").at(0);
-  await db.from("service_records").insert({
-    client_id: state.clientId, car_id: state.activeCarId || null,
-    record_date: today, mileage, description: text.trim(), is_official: false
-  });
-  loadServiceBook();
+  
+  try {
+    await window._fb.addDoc(window._fb.collection(window._fb.db, "service_records"), {
+      client_id: state.clientId, car_id: state.activeCarId || null,
+      record_date: today, mileage, description: text.trim(), is_official: false
+    });
+    loadServiceBook();
+  } catch (e) { alert("Ошибка добавления записи: " + e.message); }
 }
 
 async function deleteRecord(id) {
-  const db = getDb();
-  await db.from("service_records").delete().eq("id", id);
-  loadServiceBook();
+  try {
+    await window._fb.deleteDoc(window._fb.doc(window._fb.db, "service_records", id));
+    loadServiceBook();
+  } catch (e) { alert("Ошибка удаления: " + e.message); }
 }
 
+// ==========================================
+// 6. ЗАЯВКИ И СТО
+// ==========================================
+
 async function createAppointment() {
-  const db = getDb();
   const problem = document.getElementById("problem-input").value.trim();
   if (!problem) return alert("Опишите проблему");
-  const { error } = await db.from("appointments").insert({
-    client_id: state.clientId, car_id: state.activeCarId || null,
-    client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
-    client_phone: state.phone, problem_description: problem, status: "Ожидает ответа мастера"
-  });
-  if (error) return alert("Ошибка: " + error.message);
-  document.getElementById("problem-input").value = "";
-  alert("Заявка отправлена мастеру!");
-  loadAppointments();
+  
+  try {
+    await window._fb.addDoc(window._fb.collection(window._fb.db, "appointments"), {
+      client_id: state.clientId, car_id: state.activeCarId || null,
+      client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
+      client_phone: state.phone, problem_description: problem, status: "Ожидает ответа мастера"
+    });
+    document.getElementById("problem-input").value = "";
+    alert("Заявка отправлена мастеру!");
+    loadAppointments();
+  } catch (e) { alert("Ошибка отправки заявки: " + e.message); }
 }
 
 function toggleArchive(arch) {
@@ -596,37 +585,45 @@ function toggleArchive(arch) {
 }
 
 async function loadAppointments() {
-  const db = getDb();
-  const { data: apps } = await db.from("appointments").select("*").eq("client_id", state.clientId);
-  const safeApps = Array.isArray(apps) ? apps.slice().reverse() : new Array();
-  const filtered = safeApps.filter((a) => {
-    const done = a.status === "Готово" || a.status === "Отменено клиентом";
-    return showArchive ? done : !done;
-  });
-
   const list = document.getElementById("appointments-list");
-  list.innerHTML = filtered.length ? "" : `<div style="color:var(--muted); padding:12px 0;">Список пуст</div>`;
+  list.innerHTML = "<div style='color:gray;'>Загрузка...</div>";
+  
+  try {
+    const q = window._fb.query(window._fb.collection(window._fb.db, "appointments"), window._fb.where("client_id", "==", state.clientId));
+    const snap = await window._fb.getDocs(q);
+    const apps = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+    
+    const filtered = apps.filter((a) => {
+      const done = a.status === "Готово" || a.status === "Отменено клиентом";
+      return showArchive ? done : !done;
+    });
 
-  filtered.forEach((a) => {
-    const cancelled = a.status === "Отменено клиентом";
-    const cls = a.status === "Готово" ? "card-green" : cancelled ? "card-red" : "";
-    const div = document.createElement("div");
-    div.className = `card ${cls}`;
-    div.innerHTML = `
-      <b>Авто: ${a.car_model}</b>
-      <div style="margin:4px 0;">Жалоба: ${a.problem_description}</div>
-      ${a.visit_date ? `<div style="color:var(--primary); font-weight:700;">📅 Назначен визит: ${a.visit_date} в ${a.visit_time || ""}</div>` : ""}
-      ${a.master_comment ? `<div style="color:var(--green); font-weight:600;">💬 Ответ мастера: ${a.master_comment}</div>` : ""}
-      <div style="margin-top:6px; font-weight:700; color:${cancelled ? "var(--red)" : "var(--primary)"}">Статус: ${a.status}</div>
-      ${a.status !== "Готово" && !cancelled ? `<button class="btn btn-danger" style="margin-top:8px; padding:8px;" onclick="cancelAppointment('${a.id}')">Отменить заявку</button>` : ""}`;
-    list.appendChild(div);
-  });
+    list.innerHTML = filtered.length ? "" : `<div style="color:var(--muted); padding:12px 0;">Список пуст</div>`;
+
+    filtered.forEach((a) => {
+      const cancelled = a.status === "Отменено клиентом";
+      const cls = a.status === "Готово" ? "card-green" : cancelled ? "card-red" : "";
+      const div = document.createElement("div");
+      div.className = `card ${cls}`;
+      div.innerHTML = `
+        <b>Авто: ${a.car_model}</b>
+        <div style="margin:4px 0;">Жалоба: ${a.problem_description}</div>
+        ${a.visit_date ? `<div style="color:var(--primary); font-weight:700;">📅 Назначен визит: ${a.visit_date} в ${a.visit_time || ""}</div>` : ""}
+        ${a.master_comment ? `<div style="color:var(--green); font-weight:600;">💬 Ответ мастера: ${a.master_comment}</div>` : ""}
+        <div style="margin-top:6px; font-weight:700; color:${cancelled ? "var(--red)" : "var(--primary)"}">Статус: ${a.status}</div>
+        ${a.status !== "Готово" && !cancelled ? `<button class="btn btn-danger" style="margin-top:8px; padding:8px;" onclick="cancelAppointment('${a.id}')">Отменить заявку</button>` : ""}`;
+      list.appendChild(div);
+    });
+  } catch (e) {
+    list.innerHTML = `<div style="color:red;">Ошибка загрузки: ${e.message}</div>`;
+  }
 }
 
 async function cancelAppointment(id) {
-  const db = getDb();
-  await db.from("appointments").update({ status: "Отменено клиентом" }).eq("id", id);
-  loadAppointments();
+  try {
+    await window._fb.updateDoc(window._fb.doc(window._fb.db, "appointments", id), { status: "Отменено клиентом" });
+    loadAppointments();
+  } catch (e) { alert("Ошибка отмены: " + e.message); }
 }
 
 function openMap() {
@@ -635,65 +632,95 @@ function openMap() {
   window.open(mapUrl, "_blank");
 }
 
+// ==========================================
+// 7. УВЕДОМЛЕНИЯ
+// ==========================================
+
 async function loadMessages() {
-  const db = getDb();
-  const { data: msgs } = await db.from("master_messages").select("*").eq("client_id", state.clientId);
-  const safeMsgs = Array.isArray(msgs) ? msgs.slice().reverse() : new Array();
   const list = document.getElementById("messages-list");
-  list.innerHTML = safeMsgs.length ? "" : `<div style="color:var(--muted);">Новых уведомлений от мастера Николая пока нет</div>`;
-  safeMsgs.forEach((m) => {
-    const div = document.createElement("div");
-    div.className = "card card-blue";
-    div.innerHTML = `<div style="font-size:12px; font-weight:700; color:var(--primary); margin-bottom:4px;">✉️ Мастер Николай</div><div class="pre-text">${m.message_text}</div>`;
-    list.appendChild(div);
-  });
+  list.innerHTML = "<div style='color:gray;'>Загрузка...</div>";
+  
+  try {
+    const q = window._fb.query(window._fb.collection(window._fb.db, "master_messages"), window._fb.where("client_id", "==", state.clientId));
+    const snap = await window._fb.getDocs(q);
+    const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+
+    list.innerHTML = msgs.length ? "" : `<div style="color:var(--muted);">Новых уведомлений от мастера Николая пока нет</div>`;
+    
+    msgs.forEach((m) => {
+      const div = document.createElement("div");
+      div.className = "card card-blue";
+      div.innerHTML = `<div style="font-size:12px; font-weight:700; color:var(--primary); margin-bottom:4px;">✉️ Мастер Николай</div><div class="pre-text">${m.message_text}</div>`;
+      list.appendChild(div);
+    });
+  } catch (e) {
+    list.innerHTML = `<div style="color:red;">Ошибка загрузки: ${e.message}</div>`;
+  }
 }
 
+// ==========================================
+// 8. НАСТРОЙКИ И ПРОФИЛЬ
+// ==========================================
+
 async function openSettings() {
-  const db = getDb();
   Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
   document.getElementById("bottom-nav").classList.add("hidden");
   document.getElementById("tab-settings").classList.remove("hidden");
   applySubscriptionUi();
-  const { data: cl } = await db.from("clients").select("*").eq("id", state.clientId).maybeSingle();
-  if (cl) {
-    document.getElementById("set-name").value = cl.name;
-    document.getElementById("set-car").value = state.carModel;
-    document.getElementById("set-plate").value = state.carPlate;
-    document.getElementById("set-pass").value = cl.password;
-  }
+  
+  try {
+    const docSnap = await window._fb.getDoc(window._fb.doc(window._fb.db, "clients", state.clientId));
+    if (docSnap.exists()) {
+      const cl = docSnap.data();
+      document.getElementById("set-name").value = cl.name || "";
+      document.getElementById("set-car").value = state.carModel || "";
+      document.getElementById("set-plate").value = state.carPlate || "";
+      document.getElementById("set-pass").value = cl.password || "";
+    }
+  } catch (e) { console.error(e); }
 }
 
 function closeSettings() { switchTab(0); }
 
 async function saveProfileSettings() {
-  const db = getDb();
   const name = document.getElementById("set-name").value.trim();
   const carModel = document.getElementById("set-car").value.trim();
   const carPlate = document.getElementById("set-plate").value.trim();
   const password = document.getElementById("set-pass").value.trim();
-  await db.from("clients").update({ name, car_model: carModel, car_plate: carPlate, password }).eq("id", state.clientId);
-  if (state.activeCarId) await db.from("cars").update({ car_model: carModel, car_plate: carPlate }).eq("id", state.activeCarId);
-  saveSession({ name, carModel, carPlate });
-  alert("Профиль обновлён!");
-  closeSettings();
+  
+  try {
+    await window._fb.updateDoc(window._fb.doc(window._fb.db, "clients", state.clientId), { name, car_model: carModel, car_plate: carPlate, password });
+    if (state.activeCarId) {
+      await window._fb.updateDoc(window._fb.doc(window._fb.db, "cars", state.activeCarId), { car_model: carModel, car_plate: carPlate });
+    }
+    saveSession({ name, carModel, carPlate });
+    alert("Профиль обновлён!");
+    closeSettings();
+  } catch (e) { alert("Ошибка сохранения профиля: " + e.message); }
 }
 
 function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
 
+// ==========================================
+// 9. ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ
+// ==========================================
+
 async function initApp() {
-  const db = getDb();
   document.getElementById("auth-screen").classList.add("hidden");
   document.getElementById("app-shell").classList.remove("hidden");
   updateHeaderCar();
   refreshSubscriptionStatus();
-  const { data: info } = await db.from("service_info").select("*").eq("id", 1).maybeSingle();
-  if (info) {
-    document.getElementById("sto-address-link").textContent = `📍 ${info.address}`;
-    const phoneEl = document.getElementById("sto-phone-link");
-    phoneEl.textContent = `📞 Мастер Николай: ${info.phone}`;
-    phoneEl.href = `tel:${info.phone}`;
-  }
+  
+  try {
+    const docSnap = await window._fb.getDoc(window._fb.doc(window._fb.db, "service_info", "1"));
+    if (docSnap.exists()) {
+      const info = docSnap.data();
+      document.getElementById("sto-address-link").textContent = `📍 ${info.address}`;
+      const phoneEl = document.getElementById("sto-phone-link");
+      phoneEl.textContent = `📞 Мастер Николай: ${info.phone}`;
+      phoneEl.href = `tel:${info.phone}`;
+    }
+  } catch (e) { console.error("Ошибка загрузки контактов СТО", e); }
 }
 
 if (state && state.clientId) initApp();
@@ -731,6 +758,10 @@ async function shareBothLinks() {
   }
 }
 
+// ==========================================
+// 10. PUSH-УВЕДОМЛЕНИЯ
+// ==========================================
+
 const VAPID_PUBLIC_KEY = "BMXC3T3ZuXjoqSH-2vTFnl5huR8fIPeXxWvtUQg7cbyMXNWJ75I2068C_NFiSoRC5QvA79SBkyFkHkl5yD_4ds8";
 
 function urlBase64ToUint8Array(base64String) {
@@ -751,14 +782,15 @@ function syncPushButtonState() {
 async function enableIosPush() {
   const btn = document.getElementById("push-enable-btn");
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-    return alert("На iPhone сначала добавьте сайт на экран «Домой» через меню «Поделиться» в Safari, затем откройте иконку с рабочего стола.");
+    return alert("На iPhone сначала добавьте сайт на экран «Домой», затем откройте иконку с рабочего стола.");
   }
   btn.disabled = true;
   btn.textContent = "Переподключение...";
+  
   try {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
-      alert("Разрешение на уведомления отклонено в настройках телефона.");
+      alert("Разрешение на уведомления отклонено.");
       btn.disabled = false;
       btn.textContent = "Включить уведомления";
       return;
@@ -772,11 +804,14 @@ async function enableIosPush() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     });
-    const db = getDb();
-    await db.from("clients").update({ push_subscription: sub.toJSON() }).eq("id", state.clientId);
+    
+    await window._fb.updateDoc(window._fb.doc(window._fb.db, "clients", state.clientId), { 
+      push_subscription: sub.toJSON() 
+    });
+    
     btn.textContent = "✅ Уведомления включены";
     btn.disabled = false;
-    alert("Подписка обновлена!");
+    alert("Подписка на уведомления обновлена!");
   } catch (e) {
     alert("Ошибка подписки: " + e.message);
     btn.disabled = false;

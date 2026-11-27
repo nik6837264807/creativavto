@@ -53,34 +53,23 @@
       <section id="tab-0">
         <div id="ai-unlocked-area">
           <div id="diagnost-home" class="ai-hero">
-            <div class="pulse-ring-container" onclick="openVoiceAssistant()">
-              <div class="pulse-ring"></div>
-              <div class="pulse-ring delay-1"></div>
-              <div class="pulse-ring delay-2"></div>
-              <button class="ai-circle-main">
-                <span class="ai-circle-icon">🔧</span>
-              </button>
-            </div>
-            <div class="ai-title">ИИ-Автомеханик</div>
-            
-            <div class="ai-actions">
-              <button class="btn btn-tonal" onclick="document.getElementById('dash-file').click()">
-                ⚠️ Расшифровать значки на приборке
-              </button>
-              <input id="dash-file" type="file" accept="image/*" class="hidden" onchange="handleDashboardPhoto(event)" />
-              
-              <button class="btn btn-tonal mt-10" onclick="startSoundScanner()">
-                🎤 Сканер посторонних звуков (20 сек)
-              </button>
-            </div>
+            <button class="ai-circle" onclick="openAiChat()">
+              <span class="ai-circle-icon">🔧</span>
+              <span>ИИ-Автомеханик</span>
+            </button>
+            <button class="btn btn-tonal" onclick="document.getElementById('dash-file').click()">
+              ⚠️ Расшифровать значки на приборке
+            </button>
+            <input id="dash-file" type="file" accept="image/*" class="hidden" onchange="handleDashboardPhoto(event)" />
           </div>
 
           <div id="diagnost-chat" class="hidden">
-            <div class="row-between mb-10">
+            <div class="row-between">
               <h3>ИИ-Автомеханик</h3>
               <button class="btn-link-inline" onclick="closeAiChat()">Назад</button>
             </div>
-            <div id="ai-chat-history" class="chat-history"></div>
+            <textarea id="ai-question" rows="3" placeholder="Опишите марку авто и что случилось..."></textarea>
+            <button id="ai-ask-btn" class="btn" onclick="askAiMechanic()">Получить консультацию</button>
             <div id="ai-answer-box" class="card hidden mt-14">
               <div id="ai-answer-text" class="pre-text"></div>
               <button class="btn mt-14" onclick="bookFromAi()">Отправить заявку в CreativAvto</button>
@@ -95,12 +84,14 @@
               Срок вашей подписки или пробного периода истёк. Сервисная книжка и запись на СТО работают бесплатно, а для доступа к ИИ-диагностике выберите пакет:
             </p>
             <div id="plans-list"></div>
+
             <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; margin:12px 0; cursor:pointer;">
               <input id="agree-terms-cb" type="checkbox" style="width:auto; margin-top:3px;" />
               <span>
-                Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600;">условия пользовательского соглашения</a>.
+                Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600;">условия пользовательского соглашения</a> и уведомлён(а), что стоимость подписки на будущие периоды может быть увеличена.
               </span>
             </label>
+
             <button id="pay-sub-btn" class="btn" onclick="startSubscriptionPayment()">💳 Оплатить подписку (ЮKassa)</button>
             <button class="btn btn-tonal mt-10" onclick="refreshSubscriptionStatus()">🔄 Проверить статус оплаты</button>
           </div>
@@ -229,33 +220,6 @@
     </div>
   </div>
 
-  <!-- МОДАЛЬНОЕ ОКНО: ВЫБОР ВВОДА (ГОЛОС/ТЕКСТ) -->
-  <div id="voice-selector-modal" class="modal-backdrop hidden" onclick="if(event.target===this) closeVoiceSelector()">
-    <div class="modal-sheet" style="text-align:center;">
-      <h3>Как задать вопрос?</h3>
-      <div class="row-gap" style="justify-content:space-around; margin-top:20px;">
-        <button class="btn-circle" onclick="startVoiceRecognition()">
-          <span style="font-size:30px;">🎤</span>
-          <span style="font-size:12px; margin-top:5px;">Голосом</span>
-        </button>
-        <button class="btn-circle" onclick="openTextInput()">
-          <span style="font-size:30px;">⌨️</span>
-          <span style="font-size:12px; margin-top:5px;">Текстом</span>
-        </button>
-      </div>
-      <button class="btn-link mt-14" onclick="closeVoiceSelector()">Отмена</button>
-    </div>
-  </div>
-
-  <!-- МОДАЛЬНОЕ ОКНО: ТЕКСТОВЫЙ ВВОД -->
-  <div id="text-input-modal" class="modal-backdrop hidden" onclick="if(event.target===this) closeTextInput()">
-    <div class="modal-sheet">
-      <h3>Текстовый вопрос</h3>
-      <textarea id="ai-question" rows="3" placeholder="Опишите марку авто и что случилось..."></textarea>
-      <button id="ai-ask-btn" class="btn" onclick="askAiMechanic()">Получить консультацию</button>
-    </div>
-  </div>
-
   <!-- ПОДВАЛ САЙТА -->
   <footer style="text-align: center; padding: 20px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); margin-top: 40px;">
     <div style="margin-bottom: 8px;">© CreativAvto Тамбов. Плательщик НПД.</div>
@@ -264,15 +228,13 @@
 
   <!-- ПОДКЛЮЧАЕМ FIREBASE SDK -->
   <script type="module">
-    // 1. ПРАВИЛЬНЫЕ ИМПОРТЫ FIREBASE
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-    import { getFirestore, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-    // 2. ПРАВИЛЬНЫЙ КОНФИГ
     const firebaseConfig = {
       apiKey: "AIzaSyB5iDK0cp_w1CbtYt1Iv6IQcZLS-Lmn05U",
-      authDomain: "creativavto-f7bee.firebaseapp.com", // Исправлено!
+      authDomain: "creativavto-f7bee.firebaseapp.com",
       projectId: "creativavto-f7bee",
       storageBucket: "creativavto-f7bee.firebasestorage.app",
       messagingSenderId: "682860620946",
@@ -283,12 +245,12 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // 3. ПЕРЕДАЕМ ВСЕ НУЖНЫЕ ФУНКЦИИ В WINDOW._FB
-    window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc };
+    // Делаем доступными глобально для app.js
+    window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc };
     
-    // 4. ЗАГРУЖАЕМ APP.JS
+    // Запускаем app.js после инициализации
     const script = document.createElement('script');
-    script.src = './app.js?v=28'; // Обновил версию для сброса кэша
+    script.src = './app.js?v=24';
     document.body.appendChild(script);
   </script>
 </body>

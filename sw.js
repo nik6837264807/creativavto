@@ -1,4 +1,4 @@
-const CACHE_NAME = "creativavto-pwa-v27";
+const CACHE_NAME = "creativavto-pwa-v28";
 const ASSETS = [
   "./",
   "./index.html",
@@ -32,6 +32,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   // Если это запрос к Firestore, ЮKassa или Yandex Cloud — пропускаем (не кэшируем)
   if (url.origin.includes("firestore.googleapis.com") || 
+      url.origin.includes("gstatic.com") ||
       url.origin.includes("yookassa.ru") || 
       url.origin.includes("yandexcloud.net")) {
     return;
@@ -41,7 +42,6 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Кэшируем успешные ответы для статики
         if (response.ok && url.origin === self.location.origin) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
@@ -49,13 +49,17 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => {
-        // Если сети нет, отдаем из кэша. Если нет в кэше — отдаем главную страницу
+        // Если сети нет, отдаем из кэша.
         return caches.match(event.request).then((cachedResponse) => {
           if (cachedResponse) return cachedResponse;
-          // Фолбэк для навигации
+          
+          // Фолбэк для навигации (если нет сети и нет в кэше)
           if (event.request.mode === 'navigate') {
             return caches.match("./index.html");
           }
+          
+          // ВАЖНО: Всегда возвращаем Response, чтобы не было ошибки "Failed to convert value to Response"
+          return new Response("Network error", { status: 408, headers: { "Content-Type": "text/plain" } });
         });
       })
   );

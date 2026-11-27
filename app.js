@@ -255,10 +255,14 @@ async function startSubscriptionPayment() {
   btn.disabled = true;
   btn.textContent = "Переход к оплате...";
   try {
-    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+    const r = await fetch("https://workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://nik6837264807.github.io/creativavto/" })
+      body: JSON.stringify({
+        client_id: state.clientId,
+        plan_id: selectedPlanId,
+        return_url: "https://github.io"
+      })
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Ошибка оплаты");
@@ -468,7 +472,42 @@ async function startSoundScanner() {
     alert("Ошибка доступа к микрофону: " + e.message);
   }
 }
+async function handleDashboardPhoto(event) {
+  if (!isSubscriptionActive()) {
+    event.target.value = "";
+    return applySubscriptionUi();
+  }
+  const file = event.target.files?.[0];
+  if (!file) return;
+  document.getElementById("diagnost-home").classList.add("hidden");
+  document.getElementById("diagnost-chat").classList.remove("hidden");
+  const chatHistory = document.getElementById("ai-chat-history");
+  const qText = `Фото приборной панели (${state.carModel}): расшифровка горящих значков`;
+  chatHistory.innerHTML += `<div class="chat-bubble user">📷 ${qText}</div>`;
+  chatHistory.innerHTML += `<div class="chat-bubble" id="ai-thinking">🤖 Распознаю значки...</div>`;
 
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const r = await fetch("https://workers.dev", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "dashboard_vision", imageBase64: e.target.result, prompt: qText, carModel: state.carModel })
+      });
+      const data = await r.json();
+      document.getElementById("ai-thinking")?.remove();
+      if (!r.ok) throw new Error(data.error || "Ошибка анализа фото");
+      chatHistory.innerHTML += `<div class="chat-bubble">🤖 ${data.reply}</div>`;
+      document.getElementById("ai-answer-box").classList.remove("hidden");
+      document.getElementById("ai-answer-text").textContent = qText;
+    };
+    reader.readAsDataURL(file);
+  } catch (err) {
+    document.getElementById("ai-thinking")?.remove();
+    alert("Ошибка фото: " + err.message);
+  }
+  event.target.value = "";
+}
 function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-answer-text").textContent;
   switchTab(2);
@@ -658,13 +697,20 @@ async function deleteRecord(id) {
 async function createAppointment() {
   const problem = document.getElementById("problem-input").value.trim();
   if (!problem) return alert("Опишите проблему");
-  
   try {
     await window._fb.addDoc(window._fb.collection(window._fb.db, "appointments"), {
       client_id: state.clientId, car_id: state.activeCarId || null,
       client_name: state.name, car_model: state.carModel, car_plate: state.carPlate,
       client_phone: state.phone, problem_description: problem, status: "Ожидает ответа мастера"
     });
+    fetch("https://workers.dev", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_type: "INSERT",
+        record: { client_name: state.name, car_model: state.carModel, problem_description: problem }
+      })
+    }).catch(() => {});
     document.getElementById("problem-input").value = "";
     alert("Заявка отправлена мастеру!");
     loadAppointments();

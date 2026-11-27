@@ -7,7 +7,7 @@ var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
 // Ссылки на функции в Yandex Cloud
 const YK_PAYMENT_URL = "https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v"; // Оплата
-const YK_AI_URL = "https://functions.yandexcloud.net/d4emqd5rd14hquqojv72"; // ИИ
+const YK_AI_URL = "https://d5d2rio2emd29vahujfh.6brbn2wz.apigw.yandexcloud.net/ask"; // ИИ через API Gateway
 
 // Инициализация Service Worker
 if ("serviceWorker" in navigator) {

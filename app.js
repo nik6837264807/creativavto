@@ -5,6 +5,10 @@ var selectedPlanId = "plan_6m";
 var cachedPlans = [];
 var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
 
+// Ссылки на функции в Yandex Cloud
+const YK_PAYMENT_URL = "https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v"; // Оплата
+const YK_AI_URL = "https://functions.yandexcloud.net/d4emqd5rd14hquqojv72"; // ИИ
+
 // Инициализация Service Worker
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
@@ -73,7 +77,7 @@ async function handleAuth() {
     const db = window._fb.db;
 
     if (isLoginMode) {
-      // Вход: ищем по телефону и паролю
+      // Вход
       const q = window._fb.query(
         window._fb.collection(db, "clients"), 
         window._fb.where("phone", "==", phone), 
@@ -91,7 +95,6 @@ async function handleAuth() {
       const found = foundDoc.data();
       const foundId = foundDoc.id;
 
-      // Загружаем машины
       const carsQ = window._fb.query(window._fb.collection(db, "cars"), window._fb.where("client_id", "==", foundId));
       const carsSnap = await window._fb.getDocs(carsQ);
       const cars = carsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -107,7 +110,7 @@ async function handleAuth() {
       initApp();
 
     } else {
-      // Регистрация: создаем документ с ID = uid
+      // Регистрация
       const name = document.getElementById("auth-name").value.trim();
       const carModel = document.getElementById("auth-car").value.trim();
       const carPlate = document.getElementById("auth-plate").value.trim();
@@ -118,7 +121,7 @@ async function handleAuth() {
         return;
       }
 
-      const uid = user.uid; // ID документа привязан к auth.uid
+      const uid = user.uid;
       
       await window._fb.setDoc(window._fb.doc(db, "clients", uid), {
         name, car_model: carModel, car_plate: carPlate, phone, password, 
@@ -256,7 +259,7 @@ async function startSubscriptionPayment() {
   btn.disabled = true;
   btn.textContent = "Переход к оплате...";
   try {
-    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+    const r = await fetch(YK_PAYMENT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ client_id: state.clientId, plan_id: selectedPlanId, return_url: "https://nik6837264807.github.io/creativavto/" })
@@ -310,13 +313,12 @@ async function askAiMechanic() {
   btn.textContent = "Механик анализирует...";
 
   try {
-    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+    const r = await fetch(YK_AI_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "text", prompt, carModel: state.carModel })
     });
     
-    // Проверяем, что сервер вернул JSON, а не HTML ошибки
     const textResponse = await r.text();
     let data;
     try {
@@ -380,7 +382,7 @@ async function handleDashboardPhoto(event) {
 
   try {
     const imageBase64 = await resizeImageToBase64(file, 1024);
-    const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
+    const r = await fetch(YK_AI_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "dashboard_vision", imageBase64, carModel: state.carModel })

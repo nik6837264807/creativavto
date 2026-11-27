@@ -1,11 +1,12 @@
-const CACHE_NAME = "creativavto-pwa-v21";
-const ASSETS = Array.of(
+const CACHE_NAME = "creativavto-pwa-v22";
+const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
-  "./manifest.json"
-);
+  "./manifest.json",
+  "./sw.js"
+];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -25,9 +26,38 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Не вмешиваемся в POST запросы (оплата, ИИ) и запросы к API
   if (event.request.method !== "GET") return;
+  
+  const url = new URL(event.request.url);
+  // Если это запрос к Firestore, ЮKassa или Yandex Cloud — пропускаем (не кэшируем)
+  if (url.origin.includes("firestore.googleapis.com") || 
+      url.origin.includes("yookassa.ru") || 
+      url.origin.includes("yandexcloud.net")) {
+    return;
+  }
+
+  // Для своих файлов используем Network-first, но с фолбэком на кэш
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .then((response) => {
+        // Кэшируем успешные ответы для статики
+        if (response.ok && url.origin === self.location.origin) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+        }
+        return response;
+      })
+      .catch(() => {
+        // Если сети нет, отдаем из кэша. Если нет в кэше — отдаем главную страницу
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          // Фолбэк для навигации
+          if (event.request.mode === 'navigate') {
+            return caches.match("./index.html");
+          }
+        });
+      })
   );
 });
 
@@ -60,7 +90,7 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      if (list.length > 0) return list.at(0).focus();
+      if (list.length > 0) return list[0].focus();
       return clients.openWindow("./");
     })
   );

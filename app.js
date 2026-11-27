@@ -103,9 +103,8 @@ function getDb() {
     functions: {
       async invoke(fnName, { body }) {
         try {
-          // Если в index.html задан window.CLOUD_FUNCTIONS_BASE, используем его, иначе заглушка
-          const base = window.CLOUD_FUNCTIONS_BASE || "https://functions.yandexcloud.net/ВАШ_ID_ФУНКЦИИ";
-          const r = await fetch(`${base}/${fnName}`, {
+          // ИСПРАВЛЕНО: передаем запрос напрямую на URL функции Yandex Cloud
+          const r = await fetch("https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
@@ -216,7 +215,7 @@ async function handleAuth() {
 }
 
 function switchTab(idx) {
-  const tabs = [0, 1, 2, 3]; // ИСПРАВЛЕНО: добавлен массив
+  const tabs = [0, 1, 2, 3];
   const navItems = document.querySelectorAll(".nav-item");
   tabs.forEach((i) => {
     const el = document.getElementById(`tab-${i}`);
@@ -495,7 +494,9 @@ async function transferCar(carId, carModel) {
   await db.from("service_records").update({ client_id: newOwner.id }).eq("car_id", carId);
   alert(`Авто передано ${newOwner.name}!`);
   openGarageModal();
-}async function loadServiceBook() {
+}
+
+async function loadServiceBook() {
   const db = getDb();
   if (state.activeCarId) {
     const { data: car } = await db.from("cars").select("current_mileage").eq("id", state.activeCarId).maybeSingle();
@@ -630,7 +631,7 @@ async function cancelAppointment(id) {
 
 function openMap() {
   const addr = document.getElementById("sto-address-link").textContent.replace("📍 ", "");
-  const mapUrl = Array.of("https:/", "yandex.ru", "maps", "?text=").join("/") + encodeURIComponent(addr);
+  const mapUrl = "https://yandex.ru/maps/?text=" + encodeURIComponent(addr);
   window.open(mapUrl, "_blank");
 }
 
@@ -676,7 +677,9 @@ async function saveProfileSettings() {
   saveSession({ name, carModel, carPlate });
   alert("Профиль обновлён!");
   closeSettings();
-}function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
+}
+
+function logout() { localStorage.removeItem("creativavto_session"); location.reload(); }
 
 async function initApp() {
   const db = getDb();
@@ -696,14 +699,14 @@ async function initApp() {
 if (state && state.clientId) initApp();
 
 function getAppLinks() {
-  const androidUrl = Array.of("https:/", "github.com", "nik6837264807", "creativavto", "releases", "download", "v1.0", "app-client-debug.apk").join("/");
-  const iphoneUrl = Array.of("https:/", "nik6837264807.github.io", "creativavto", "").join("/");
+  const androidUrl = "https://github.com/nik6837264807/creativavto/releases/download/v1.0/app-client-debug.apk";
+  const iphoneUrl = "https://nik6837264807.github.io/creativavto/";
   return { androidUrl, iphoneUrl };
 }
 
 function openShareModal() {
   const { androidUrl, iphoneUrl } = getAppLinks();
-  const qrBase = Array.of("https:/", "://qrserver.com", "v1", "create-qr-code", "?size=240x240&data=").join("/");
+  const qrBase = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=";
   document.getElementById("qr-android-img").src = qrBase + encodeURIComponent(androidUrl);
   document.getElementById("qr-iphone-img").src = qrBase + encodeURIComponent(iphoneUrl);
   document.getElementById("share-modal").classList.remove("hidden");

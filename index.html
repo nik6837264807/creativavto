@@ -86,13 +86,16 @@
             </p>
             <div id="plans-list"></div>
 
-            <!-- ИСПРАВЛЕННЫЙ БЛОК ГАЛОЧКИ -->
-            <div style="display:flex; align-items:flex-start; gap:10px; margin:12px 0;">
-              <input id="agree-terms-cb" type="checkbox" style="width:24px; height:24px; flex-shrink:0; cursor:pointer; margin-top:2px; accent-color: var(--primary);" />
-              <label for="agree-terms-cb" style="font-size:13px; line-height:1.4; cursor:pointer; user-select:none;">
+            <!-- КАСТОМНАЯ ГАЛОЧКА -->
+            <div id="agree-container" style="display:flex; align-items:flex-start; gap:10px; margin:12px 0; cursor:pointer;" onclick="toggleTermsCheckbox()">
+              <div id="custom-checkbox" style="width:24px; height:24px; border:2px solid var(--primary); border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:#fff;">
+                <span id="checkmark" style="color:var(--primary); font-weight:bold; font-size:18px; display:none;">✓</span>
+              </div>
+              <div style="font-size:13px; line-height:1.4; user-select:none;">
                 Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline;" onclick="event.stopPropagation();">условия пользовательского соглашения</a> и уведомлён(а), что стоимость подписки на будущие периоды может быть увеличена.
-              </label>
+              </div>
             </div>
+            <input type="checkbox" id="agree-terms-cb" style="display:none;" />
 
             <button id="pay-sub-btn" class="btn" onclick="startSubscriptionPayment()">💳 Оплатить подписку (ЮKassa)</button>
             <button class="btn btn-tonal mt-10" onclick="refreshSubscriptionStatus()">🔄 Проверить статус оплаты</button>
@@ -250,9 +253,9 @@
     // Делаем доступными глобально для app.js
     window._fb = { auth, db, signInAnonymously, onAuthStateChanged, collection, query, where, getDocs, addDoc, setDoc, doc, updateDoc, deleteDoc, getDoc };
     
-    // Запускаем app.js после инициализации (ВЕРСИЯ ОБНОВЛЕНА ДО 36)
+    // Запускаем app.js после инициализации (ВЕРСИЯ ОБНОВЛЕНА ДО 37)
     const script = document.createElement('script');
-    script.src = './app.js?v=36';
+    script.src = './app.js?v=37';
     document.body.appendChild(script);
   </script>
 </body>

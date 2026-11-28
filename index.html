@@ -86,12 +86,12 @@
             </p>
             <div id="plans-list"></div>
 
-            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; margin:12px 0; cursor:pointer;">
-              <input id="agree-terms-cb" type="checkbox" style="width:auto; margin-top:3px;" />
-              <span>
-                Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600;">условия пользовательского соглашения</a> и уведомлён(а), что стоимость подписки на будущие периоды может быть увеличена.
-              </span>
-            </label>
+            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; margin:12px 0; cursor:pointer; position:relative; z-index:10;">
+  <input id="agree-terms-cb" type="checkbox" style="width:24px; height:24px; margin:0; flex-shrink:0; cursor:pointer; z-index:11;" />
+  <span style="line-height:1.4;">
+    Я принимаю <a href="./offer.html" target="_blank" style="color:var(--primary); font-weight:600; position:relative; z-index:12;">условия пользовательского соглашения</a> и уведомлён(а), что стоимость подписки на будущие периоды может быть увеличена.
+  </span>
+</label>
 
             <button id="pay-sub-btn" class="btn" onclick="startSubscriptionPayment()">💳 Оплатить подписку (ЮKassa)</button>
             <button class="btn btn-tonal mt-10" onclick="refreshSubscriptionStatus()">🔄 Проверить статус оплаты</button>

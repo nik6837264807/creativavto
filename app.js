@@ -381,7 +381,7 @@ function resizeImageToBase64(file, maxSide = 1024) {
         const canvas = document.createElement("canvas");
         canvas.width = w; canvas.height = h;
         canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
+        resolve(canvas.toDataURL("image/jpeg", 0.95));
       };
       img.onerror = reject;
       img.src = e.target.result;

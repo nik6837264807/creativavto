@@ -1,3 +1,7 @@
+// ==========================================
+// ЧАСТЬ 1: ЯДРО, АВТОРИЗАЦИЯ И НАВИГАЦИЯ
+// ==========================================
+
 // Глобальные переменные и состояние
 var isLoginMode = false;
 var showArchive = false;
@@ -20,10 +24,6 @@ var isStandalone = window.navigator.standalone === true || window.matchMedia("(d
 if (isIos && !isStandalone) {
   document.getElementById("ios-install-hint")?.classList.remove("hidden");
 }
-
-// ==========================================
-// 1. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ И АВТОРИЗАЦИЯ
-// ==========================================
 
 function saveSession(data) {
   state = { ...(state || {}), ...data };
@@ -48,7 +48,6 @@ function toggleAuthMode() {
   document.getElementById("auth-toggle-btn").textContent = isLoginMode ? "Впервые у нас? Зарегистрироваться" : "Уже есть аккаунт / сменил телефон? Войти";
 }
 
-// Убеждаемся, что пользователь анонимно авторизован в Firebase
 async function ensureAuth() {
   return new Promise((resolve) => {
     window._fb.onAuthStateChanged(window._fb.auth, async (user) => {
@@ -77,7 +76,6 @@ async function handleAuth() {
     const db = window._fb.db;
 
     if (isLoginMode) {
-      // Вход
       const q = window._fb.query(
         window._fb.collection(db, "clients"), 
         window._fb.where("phone", "==", phone), 
@@ -110,7 +108,6 @@ async function handleAuth() {
       initApp();
 
     } else {
-      // Регистрация
       const name = document.getElementById("auth-name").value.trim();
       const carModel = document.getElementById("auth-car").value.trim();
       const carPlate = document.getElementById("auth-plate").value.trim();
@@ -145,10 +142,6 @@ async function handleAuth() {
   btn.disabled = false;
 }
 
-// ==========================================
-// 2. НАВИГАЦИЯ И ПОДПИСКА
-// ==========================================
-
 function switchTab(idx) {
   const tabs = [0, 1, 2, 3];
   const navItems = document.querySelectorAll(".nav-item");
@@ -165,6 +158,29 @@ function switchTab(idx) {
   if (idx === 2) loadAppointments();
   if (idx === 3) { loadMessages(); syncPushButtonState(); }
 }
+
+function openSettings() {
+  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
+  Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
+  document.getElementById("bottom-nav").classList.add("hidden");
+  document.getElementById("tab-settings").classList.remove("hidden");
+  applySubscriptionUi();
+  
+  try {
+    const docSnap = window._fb.getDoc(window._fb.doc(window._fb.db, "clients", state.clientId));
+    if (docSnap.exists()) {
+      const cl = docSnap.data();
+      document.getElementById("set-name").value = cl.name || "";
+      document.getElementById("set-car").value = state.carModel || "";
+      document.getElementById("set-plate").value = state.carPlate || "";
+      document.getElementById("set-pass").value = cl.password || "";
+    }
+  } catch (e) { console.error(e); }
+}
+
+function closeSettings() { switchTab(0); }// ==========================================
+// ЧАСТЬ 2: ПОДПИСКА И ИИ-АВТОМЕХАНИК
+// ==========================================
 
 function isSubscriptionActive() {
   if (!state || !state.subscriptionUntil) return false;
@@ -284,10 +300,6 @@ function openSubscriptionScreen() {
   document.getElementById("ai-locked-area")?.classList.remove("hidden");
   loadSubscriptionPlans();
 }
-
-// ==========================================
-// 3. ИИ-АВТОМЕХАНИК
-// ==========================================
 
 function openAiChat() {
   if (!isSubscriptionActive()) return applySubscriptionUi();
@@ -412,7 +424,9 @@ async function handleDashboardPhoto(event) {
 function bookFromAi() {
   document.getElementById("problem-input").value = document.getElementById("ai-question").value;
   switchTab(2);
-}
+}// ==========================================
+// ЧАСТЬ 3: ГАРАЖ, ЖУРНАЛ ТО, ЗАЯВКИ, УВЕДОМЛЕНИЯ, ПРОФИЛЬ, PUSH
+// ==========================================
 
 // ==========================================
 // 4. ГАРАЖ И МАШИНЫ
@@ -483,6 +497,10 @@ async function transferCar(carId, carModel) {
     if (snap.empty) return alert("Пользователь с таким номером не найден!");
     
     const newOwnerId = snap.docs[0].id;
+    if (newOwnerId === state.clientId) {
+      return alert("Вы не можете передать машину самому себе!");
+    }
+    
     await window._fb.updateDoc(window._fb.doc(window._fb.db, "cars", carId), { client_id: newOwnerId });
     
     const recQ = window._fb.query(window._fb.collection(window._fb.db, "service_records"), window._fb.where("car_id", "==", carId));
@@ -491,7 +509,21 @@ async function transferCar(carId, carModel) {
       await window._fb.updateDoc(doc.ref, { client_id: newOwnerId });
     }
     alert(`Авто передано ${snap.docs[0].data().name}!`);
-    openGarageModal();
+    
+    // Защита от зависания, если передали активное авто
+    if (state.activeCarId === carId) {
+      const newCarsQ = window._fb.query(window._fb.collection(window._fb.db, "cars"), window._fb.where("client_id", "==", state.clientId));
+      const newCarsSnap = await window._fb.getDocs(newCarsQ);
+      const newCars = newCarsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (newCars.length > 0) {
+        selectCar(newCars[0]);
+      } else {
+        saveSession({ activeCarId: "", carModel: "", carPlate: "" });
+        loadServiceBook();
+      }
+    } else {
+      openGarageModal();
+    }
   } catch (e) { alert("Ошибка передачи: " + e.message); }
 }
 
@@ -705,27 +737,6 @@ async function loadMessages() {
 // ==========================================
 // 8. НАСТРОЙКИ И ПРОФИЛЬ
 // ==========================================
-
-async function openSettings() {
-  if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");
-  Array.of(0, 1, 2, 3).forEach((i) => document.getElementById(`tab-${i}`).classList.add("hidden"));
-  document.getElementById("bottom-nav").classList.add("hidden");
-  document.getElementById("tab-settings").classList.remove("hidden");
-  applySubscriptionUi();
-  
-  try {
-    const docSnap = await window._fb.getDoc(window._fb.doc(window._fb.db, "clients", state.clientId));
-    if (docSnap.exists()) {
-      const cl = docSnap.data();
-      document.getElementById("set-name").value = cl.name || "";
-      document.getElementById("set-car").value = state.carModel || "";
-      document.getElementById("set-plate").value = state.carPlate || "";
-      document.getElementById("set-pass").value = cl.password || "";
-    }
-  } catch (e) { console.error(e); }
-}
-
-function closeSettings() { switchTab(0); }
 
 async function saveProfileSettings() {
   if (!state || !state.clientId) return alert("Ошибка сессии. Войдите заново.");

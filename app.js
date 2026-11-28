@@ -8,6 +8,22 @@ var showArchive = false;
 var selectedPlanId = "plan_6m";
 var cachedPlans = [];
 var state = JSON.parse(localStorage.getItem("creativavto_session") || "null");
+function toggleTermsCheckbox() {
+  const cb = document.getElementById("agree-terms-cb");
+  const customBox = document.getElementById("custom-checkbox");
+  const checkmark = document.getElementById("checkmark");
+  
+  cb.checked = !cb.checked; // Переключаем состояние
+  
+  if (cb.checked) {
+    customBox.style.background = "var(--primary)";
+    checkmark.style.display = "block";
+    checkmark.style.color = "#fff";
+  } else {
+    customBox.style.background = "#fff";
+    checkmark.style.display = "none";
+  }
+}
 
 // Ссылки на функции в Yandex Cloud
 const YK_PAYMENT_URL = "https://functions.yandexcloud.net/d4e3keqoljd1erdnfb8v"; // Оплата
